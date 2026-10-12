@@ -323,7 +323,7 @@ const NAV=[
  ['analytics','Analytics','chart'],['logs','Visitor Logs','users'],['reports','Reports','flag'],['settings','Settings','gear']];
 function shell(sub,content,after){
   const u=me();const pending=db.reports.filter(r=>r.status==='pending').length;
-  const item=([id,l,i])=>`<a class="navitem ${sub===id?'active':''}" href="#/app/${id}">${ic(i,'w-[17px] h-[17px]')}${l}
+  const item=([id,l,i])=>`<a class="navitem ${sub===id?'active':''}" href="#/app/${id}" onclick="if(ui.mobileNav){ui.mobileNav=false;route()}">${ic(i,'w-[17px] h-[17px]')}${l}
     ${id==='reports'&&pending&&isAdmin()?`<span class="ml-auto badge bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400">${pending}</span>`:''}</a>`;
   const adminItem=isAdmin()?item(['admin','Admin Moderation','shield']):'';
   const notifs=db.events.filter(e=>myLinks().some(l=>l.id===e.linkId)).sort((a,b)=>b.occurredAt-a.occurredAt).slice(0,5);
@@ -333,7 +333,9 @@ function shell(sub,content,after){
     <aside class="fixed z-50 inset-y-0 left-0 w-64 bg-white dark:bg-ink-900 border-r border-ink-200 dark:border-ink-800 p-4 flex flex-col transition-transform lg:translate-x-0 ${ui.mobileNav?'translate-x-0':'-translate-x-full'} lg:static lg:z-auto">
       <div class="flex items-center gap-2.5 px-2 h-11 mb-3">${logo(30)}<span class="font-extrabold text-[15.5px] tracking-tight">IP Tracker</span>
         <button class="ml-auto lg:hidden text-ink-400" onclick="ui.mobileNav=false;route()">${ic('x')}</button></div>
-      <nav class="space-y-0.5 flex-1 overflow-y-auto">${NAV.map(item).join('')}${adminItem}</nav>
+      <nav class="space-y-0.5 flex-1 overflow-y-auto">${NAV.map(item).join('')}${adminItem}
+        <div class="pt-3 mt-3 border-t border-ink-100 dark:border-ink-800"><div class="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-ink-400">Our sites</div>
+        ${DOMAINS.map(d=>`<a class="navitem" href="${d}" target="_blank" rel="noopener">${ic('link','w-[17px] h-[17px]')}${d.replace('https://','')}</a>`).join('')}</div></nav>
       <div class="mt-3 rounded-xl bg-ink-50 dark:bg-ink-800/60 border border-ink-200 dark:border-ink-700 p-3">
         <div class="flex items-center gap-2.5"><div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-violet-500 text-white flex items-center justify-center text-[12px] font-bold">${esc(u.displayName[0].toUpperCase())}</div>
         <div class="min-w-0"><div class="text-[13px] font-semibold truncate">${esc(u.displayName)}</div><div class="text-[11px] text-ink-400 truncate">${esc(u.email)}</div></div></div>
@@ -349,7 +351,7 @@ function shell(sub,content,after){
         <div class="ml-auto flex items-center gap-1.5">
           <select onchange="ui.range=+this.value;route()" class="rounded-xl border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900 text-[12.5px] font-medium px-2.5 py-2 focus:outline-none">
             ${[7,30,90].map(r=>`<option value="${r}" ${ui.range===r?'selected':''}>Last ${r} days</option>`).join('')}</select>
-          <div class="relative">
+          <div class="relative" data-dd>
             <button onclick="ui.notif=!ui.notif;ui.profileMenu=false;route()" class="p-2 rounded-xl hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500 relative">${ic('bell','w-[18px] h-[18px]')}
               ${notifs.length?'<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500"></span>':''}</button>
             ${ui.notif?`<div class="absolute right-0 mt-2 w-80 card p-2 z-50 fadein"><div class="px-3 py-2 text-[12px] font-bold uppercase tracking-wider text-ink-400">Recent activity</div>
@@ -360,7 +362,7 @@ function shell(sub,content,after){
               <div class="px-3 py-2 text-[11px] text-ink-400 border-t border-ink-100 dark:border-ink-800 mt-1">Latest activity across your links.</div></div>`:''}
           </div>
           <button onclick="toggleTheme()" class="p-2 rounded-xl hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500">${ic(document.documentElement.classList.contains('dark')?'sun':'moon','w-[18px] h-[18px]')}</button>
-          <div class="relative">
+          <div class="relative" data-dd>
             <button onclick="ui.profileMenu=!ui.profileMenu;ui.notif=false;route()" class="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-violet-500 text-white flex items-center justify-center text-[13px] font-bold">${esc(u.displayName[0].toUpperCase())}</button>
             ${ui.profileMenu?`<div class="absolute right-0 mt-2 w-52 card p-1.5 z-50 fadein">
               <div class="px-3 py-2.5 border-b border-ink-100 dark:border-ink-800"><div class="text-[13px] font-semibold">${esc(u.displayName)}</div><div class="text-[11.5px] text-ink-400">${esc(u.email)}</div></div>
@@ -386,8 +388,12 @@ const statusBadge=l=>{const exp=l.expiresAt&&l.expiresAt<Date.now();
   if(l.status==='removed')return'<span class="badge bg-ink-100 dark:bg-ink-800 text-ink-500">Removed</span>';
   if(exp)return'<span class="badge bg-amber-50 dark:bg-amber-500/10 text-amber-600">Expired</span>';
   return'<span class="badge bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600">Active</span>'};
-const shortURL=l=>location.origin+location.pathname+'#/r/'+l.slug;
-const geoURL=l=>location.origin+location.pathname+'#/g/'+l.slug;
+const DOMAINS=['https://okurl.my','https://goingviral.my'];
+const baseOf=l=>(l&&l.baseUrl)||location.origin;
+const shortURL=l=>baseOf(l)+'/#/r/'+l.slug;
+const geoURL=l=>baseOf(l)+'/#/g/'+l.slug;
+const domainField=()=>{const cur=DOMAINS.includes(location.origin)?location.origin:DOMAINS[0];
+  return`<div><label class="label">Short link domain</label><select name="domain" class="input">${DOMAINS.map(d=>`<option value="${d}" ${d===cur?'selected':''}>${d.replace('https://','')}</option>`).join('')}</select></div>`};
 const evCount=id=>db.events.filter(e=>e.linkId===id).length;
 const emptyState=(icon,t,d,btn='')=>`<div class="card p-12 text-center"><div class="stat-ic bg-ink-100 dark:bg-ink-800 text-ink-400 mx-auto mb-4 !w-12 !h-12">${ic(icon,'w-6 h-6')}</div>
   <h3 class="font-bold text-[15px]">${t}</h3><p class="text-[13px] text-ink-400 mt-1.5 max-w-sm mx-auto">${d}</p><div class="mt-5">${btn}</div></div>`;
@@ -468,6 +474,7 @@ function vURLs(){
     <form onsubmit="Actions.createLink(event,'short_url')" class="grid md:grid-cols-2 gap-4">
       <div class="md:col-span-2"><label class="label">Destination URL *</label><input name="dest" class="input" placeholder="https://example.com/your-page" required/></div>
       <div><label class="label">Custom slug <span class="font-normal text-ink-400">(optional)</span></label><input name="slug" class="input mono" placeholder="auto-generated"/></div>
+      ${domainField()}
       <div><label class="label">Link title <span class="font-normal text-ink-400">(optional)</span></label><input name="title" class="input" placeholder="Campaign name"/></div>
       <div><label class="label">Expiration <span class="font-normal text-ink-400">(optional)</span></label><input name="expires" type="date" class="input"/></div>
       <div><label class="label">Analytics retention</label><select name="retention" class="input">${[7,30,90,180,365].map(d=>`<option ${d===me().settings.retentionDays?'selected':''} value="${d}">${d} days</option>`).join('')}</select></div>
@@ -496,6 +503,7 @@ function vGeo(){
     <form onsubmit="Actions.createLink(event,'geolocation')" class="grid md:grid-cols-2 gap-4">
       <div><label class="label">Destination URL *</label><input name="dest" class="input" placeholder="https://example.com/stores" required/></div>
       <div><label class="label">Link title</label><input name="title" class="input" placeholder="Store pickup locator"/></div>
+      ${domainField()}
       <div class="md:col-span-2"><label class="label">Purpose of location collection *</label><textarea name="purpose" class="input" rows="2" required placeholder="Explain clearly why you need the visitor's precise location, e.g. to show the nearest pickup outlet."></textarea></div>
       <div><label class="label">Location data retention</label><select name="retention" class="input">${[1,7,30,90].map(d=>`<option value="${d}">${d} day${d>1?'s':''}</option>`).join('')}</select></div>
       <div class="flex items-end"><button class="btn-primary px-5 py-2.5 text-[13.5px]">${ic('pin','w-4 h-4')}Create Geolocation Link</button></div></form></div>
@@ -825,7 +833,7 @@ window.Actions={
     const link={id:crypto.randomUUID(),ownerId:u.id,slug,trackingCode:code,trackingCodeHash:null,destinationUrl:dest||'pixel:',
       title:f.title?.value?.trim()||null,purpose:f.purpose?.value?.trim()||null,linkType:type,status:'active',
       expiresAt:f.expires?.value?new Date(f.expires.value).getTime():null,
-      retentionDays:+(f.retention?.value||u.settings.retentionDays),createdAt:Date.now(),updatedAt:Date.now()};
+      baseUrl:DOMAINS.includes(f.domain?.value)?f.domain.value:null,retentionDays:+(f.retention?.value||u.settings.retentionDays),createdAt:Date.now(),updatedAt:Date.now()};
     link.trackingCodeHash=await sha256(code);const{trackingCode:_tc,...row}=link;
     const{error}=await sb.from('tracking_links').insert(snake(row));
     if(error)return toast(error.code==='23505'?'Slug already in use. Choose another.':error.message,'err');
@@ -924,9 +932,11 @@ window.closeModal=()=>{$('#modal-root').innerHTML=''};
 /* ================================================================
    ROUTER
 ================================================================ */
+let lastHash=null;
 function route(){
-  ui.mobileNav=false;ui.notif=false;ui.profileMenu=false;
-  const hash=location.hash||'#/';const seg=hash.slice(1).split('/').filter(Boolean);
+  const hash=location.hash||'#/';
+  if(hash!==lastHash){ui.mobileNav=false;ui.notif=false;ui.profileMenu=false;lastHash=hash}
+ const seg=hash.slice(1).split('/').filter(Boolean);
   document.title='IP Tracker — Track Visits. Understand Traffic. Respect Privacy.';
   if(seg[0]==='r'&&seg[1])return vRedirect(seg[1]);
   if(seg[0]==='g'&&seg[1])return vGeoConsent(seg[1]);
@@ -987,6 +997,7 @@ Object.assign(Actions,{
     r.status=st;r.reviewedBy=me().id;r.reviewedAt=Date.now();if(l&&action==='disable')l.status='disabled';if(l&&action==='remove')l.status='removed';
     toast('Report '+st+(l&&action!=='dismiss'?' · link '+l.status:''));route()}
 });
+document.addEventListener('click',e=>{if((ui.notif||ui.profileMenu)&&!e.target.closest('[data-dd]')){ui.notif=false;ui.profileMenu=false;route()}});
 sb.auth.onAuthStateChange(ev=>{if(ev==='PASSWORD_RECOVERY')modal(`<h3 class="font-extrabold text-[16px] mb-3">Set a new password</h3><form onsubmit="Actions.newPass(event)"><input name="p" type="password" minlength="8" required class="input mb-3" placeholder="New password (min. 8 characters)"/><button class="btn-primary w-full py-2.5 text-[13px]">Update password</button></form>`)});
 setInterval(async()=>{const a=document.activeElement?.tagName;
   if(cur&&/^#\/app\/(overview|logs|analytics\/)/.test(location.hash)&&!['INPUT','TEXTAREA','SELECT'].includes(a)&&!$('#modal-root').firstChild){await hydrate();route()}},60000);
