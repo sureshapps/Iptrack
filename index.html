@@ -1,0 +1,999 @@
+
+<!DOCTYPE html>
+<html lang="en" class="">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>IP Tracker — Track Visits. Understand Traffic. Respect Privacy.</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = { darkMode:'class', theme:{ extend:{
+  colors:{ brand:{50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81'},
+           ink:{50:'#f8fafc',100:'#f1f5f9',200:'#e2e8f0',300:'#cbd5e1',400:'#94a3b8',500:'#64748b',600:'#475569',700:'#334155',800:'#1e293b',900:'#0f172a',950:'#020617'} },
+  fontFamily:{ sans:['Inter','ui-sans-serif','system-ui'] },
+  boxShadow:{ card:'0 1px 2px rgba(15,23,42,.05),0 4px 16px -4px rgba(15,23,42,.06)' }
+}}};
+</script>
+<style>
+  *{ -webkit-tap-highlight-color:transparent }
+  body{ font-feature-settings:"cv02","cv03","cv04","cv11" }
+  ::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;border:3px solid transparent;background-clip:content-box}
+  .dark ::-webkit-scrollbar-thumb{background:#334155;border:3px solid transparent;background-clip:content-box}
+  .card{ @apply bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-800 rounded-2xl shadow-card; }
+  .btn{ @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary{ @apply btn bg-brand-600 hover:bg-brand-700 text-white shadow-sm shadow-brand-600/30; }
+  .btn-ghost{ @apply btn border border-ink-300 dark:border-ink-700 hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-700 dark:text-ink-200; }
+  .btn-danger{ @apply btn bg-rose-600 hover:bg-rose-700 text-white; }
+  .input{ @apply w-full rounded-xl border border-ink-300 dark:border-ink-700 bg-white dark:bg-ink-950 px-3.5 py-2.5 text-sm text-ink-900 dark:text-ink-100 placeholder-ink-400 focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500 transition; }
+  .label{ @apply block text-[13px] font-semibold text-ink-700 dark:text-ink-300 mb-1.5; }
+  .badge{ @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold; }
+  .th{ @apply text-left text-[11px] font-bold uppercase tracking-wider text-ink-400 dark:text-ink-500 px-4 py-2.5 whitespace-nowrap; }
+  .td{ @apply px-4 py-3 text-[13px] text-ink-700 dark:text-ink-300 whitespace-nowrap; }
+  .navitem{ @apply flex items-center gap-3 rounded-xl px-3 py-2 text-[13.5px] font-medium text-ink-600 dark:text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800 hover:text-ink-900 dark:hover:text-ink-100 transition cursor-pointer; }
+  .navitem.active{ @apply bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-300 font-semibold; }
+  .stat-ic{ @apply w-9 h-9 rounded-xl flex items-center justify-center shrink-0; }
+  .mono{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace }
+  .hero-grid{ background-image:linear-gradient(rgba(99,102,241,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.07) 1px,transparent 1px); background-size:44px 44px; }
+  .fadein{ animation:fi .35s ease both } @keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .toastin{ animation:ti .25s ease both } @keyframes ti{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+  .leaflet-container{ border-radius:1rem; z-index:1 }
+  .dark .leaflet-tile{ filter:brightness(.7) saturate(.6) hue-rotate(180deg) invert(.92) contrast(.9); }
+  .dark .leaflet-control-attribution{ background:#0f172a!important;color:#64748b!important } .dark .leaflet-control-attribution a{color:#818cf8!important}
+  .dark .leaflet-bar a{ background:#1e293b;color:#cbd5e1;border-color:#334155 }
+  table{ border-collapse:separate;border-spacing:0 }
+  .kbd{ @apply rounded-md border border-ink-300 dark:border-ink-700 bg-ink-50 dark:bg-ink-800 px-1.5 py-0.5 text-[11px] mono; }
+</style>
+</head>
+<body class="bg-ink-50 dark:bg-ink-950 text-ink-900 dark:text-ink-100 antialiased">
+<div id="app"></div>
+<div id="toasts" class="fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 items-end"></div>
+<div id="modal-root"></div>
+
+<script>
+/* IP TRACKER — Supabase-backed. Set SUPABASE_URL + SUPABASE_ANON_KEY below. */
+'use strict';
+
+/* ---------------- utils ---------------- */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString();
+const day=864e5, hour=36e5;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+function wpick(pairs){const t=pairs.reduce((s,p)=>s+p[1],0);let r=Math.random()*t;for(const p of pairs){if((r-=p[1])<=0)return p[0]}return pairs[0][0]}
+function uid(n=16){const b=new Uint8Array(n);crypto.getRandomValues(b);return[...b].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function slugGen(n=7){const a='abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';const b=new Uint8Array(n);crypto.getRandomValues(b);return[...b].map(x=>a[x%a.length]).join('')}
+function trackCode(){const g=()=>slugGen(4).toUpperCase();return`IPT-${g()}-${g()}-${g()}`}
+async function sha256(s){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function hstr(s){let h=5381;for(let i=0;i<s.length;i++)h=((h*33)^s.charCodeAt(i))>>>0;return h.toString(36)}
+function timeAgo(ts){const d=Date.now()-ts;if(d<hour)return Math.max(1,Math.floor(d/6e4))+'m ago';if(d<day)return Math.floor(d/hour)+'h ago';if(d<7*day)return Math.floor(d/day)+'d ago';return new Date(ts).toLocaleDateString()}
+const fdate=ts=>new Date(ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+const maskIP=ip=>ip.includes(':')?ip.split(':').slice(0,3).join(':')+':…':ip.split('.').slice(0,3).join('.')+'.x';
+function toast(msg,type='ok'){const c={ok:'bg-ink-900 dark:bg-white text-white dark:text-ink-900',err:'bg-rose-600 text-white',warn:'bg-amber-500 text-ink-950'}[type];
+  const el=document.createElement('div');el.className=`toastin ${c} rounded-xl px-4 py-3 text-[13px] font-medium shadow-lg max-w-xs`;el.textContent=msg;
+  $('#toasts').appendChild(el);setTimeout(()=>{el.style.opacity='0';el.style.transition='opacity .3s';setTimeout(()=>el.remove(),320)},3400)}
+async function copyText(t,msg='Copied to clipboard'){try{await navigator.clipboard.writeText(t);toast(msg)}catch{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast(msg)}}
+function download(name,content,mime='text/plain'){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type:mime}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+function toCSV(rows,cols){const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;return [cols.map(c=>q(c[0])).join(','),...rows.map(r=>cols.map(c=>q(typeof c[1]==='function'?c[1](r):r[c[1]])).join(','))].join('\n')}
+
+/* ---------------- UA / client signal parsing ---------------- */
+function parseUA(ua){
+  ua=ua||'';
+  let browser='Other';
+  if(/Edg\//.test(ua))browser='Edge';else if(/OPR\/|Opera/.test(ua))browser='Opera';
+  else if(/Chrome\//.test(ua)&&!/Chromium/.test(ua))browser='Chrome';else if(/Firefox\//.test(ua))browser='Firefox';
+  else if(/Safari\//.test(ua)&&/Version\//.test(ua))browser='Safari';else if(/bot|crawl|spider|slurp/i.test(ua))browser='Bot/Crawler';
+  let os='Other';
+  if(/Windows NT/.test(ua))os='Windows';else if(/Mac OS X/.test(ua)&&!/Mobile/.test(ua))os='macOS';
+  else if(/Android/.test(ua))os='Android';else if(/iPhone|iPad|iPod/.test(ua))os='iOS';else if(/Linux/.test(ua))os='Linux';
+  let device='desktop';
+  if(/iPad|Tablet/.test(ua))device='tablet';else if(/Mobile|iPhone|Android/.test(ua))device='mobile';
+  if(/bot|crawl|spider/i.test(ua))device='bot';
+  return{browser,os,device};
+}
+
+/* ---------------- destination URL validation (SSRF/open-redirect guard) ---------------- */
+function validateDestination(raw){
+  if(!raw||typeof raw!=='string')return{ok:false,error:'Destination URL is required.'};
+  if(raw.length>2048)return{ok:false,error:'URL exceeds the 2048-character limit.'};
+  let u;try{u=new URL(raw)}catch{return{ok:false,error:'Malformed URL. Include the full https:// address.'}}
+  if(!['http:','https:'].includes(u.protocol))return{ok:false,error:`Scheme “${u.protocol.replace(':','')}” is not allowed. Only http/https.`};
+  const h=u.hostname.toLowerCase();
+  if(['localhost','127.0.0.1','0.0.0.0','::1','[::1]'].includes(h)||h.endsWith('.local')||h.endsWith('.internal'))
+    return{ok:false,error:'Localhost and internal hostnames are not allowed.'};
+  if(/^\d+\.\d+\.\d+\.\d+$/.test(h)){
+    if(/^(10\.|127\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(h))
+      return{ok:false,error:'Private / reserved network addresses are blocked (SSRF protection).'};
+  }
+  const badTld=/\.(onion|i2p)$/;if(badTld.test(h))return{ok:false,error:'This destination network is not supported.'};
+  return{ok:true,url:u.href,domain:h};
+}
+
+/* ---------------- Supabase (data + auth) ---------------- */
+const SUPABASE_URL='https://pmeljjwxrxnvfzqzvjet.supabase.co';
+const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZWxqand4cnhudmZ6cXp2amV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3Njc2MTksImV4cCI6MjEwNzM0MzYxOX0.Wniow4UM75TR8i58figlxavDEdQMomHhg7gQO3tAAQY';
+const FN_URL=SUPABASE_URL+'/functions/v1/track';
+const THEME_KEY='ipt_theme';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{flowType:'pkce',persistSession:true,detectSessionInUrl:true}});
+function newDB(){return{users:[],links:[],events:[],geoEvents:[],consents:[],reports:[],audit:[]}}
+let db=newDB(),cur=null;const PL={};
+const save=()=>{};
+const camel=r=>Object.fromEntries(Object.entries(r).map(([k,v])=>{const n=k.startsWith('utm_')?k:k.replace(/_([a-z])/g,(_,c)=>c.toUpperCase());return[n,/At$/.test(n)&&typeof v==='string'?Date.parse(v):v]}));
+const snake=o=>Object.fromEntries(Object.entries(o).filter(([,v])=>v!==undefined).map(([k,v])=>[k.replace(/[A-Z]/g,c=>'_'+c.toLowerCase()),/At$/.test(k)&&typeof v==='number'?new Date(v).toISOString():v]));
+const prof=p=>({id:p.id,displayName:p.display_name,email:p.email,role:p.role,createdAt:Date.parse(p.created_at),settings:{retentionDays:p.retention_days}});
+async function fetchAll(t,order){const out=[];for(let i=0;i<20;i++){const{data,error}=await sb.from(t).select('*').order(order,{ascending:false}).range(i*1000,i*1000+999);if(error)throw error;out.push(...data);if(data.length<1000)break}return out}
+async function hydrate(){
+  const{data:{session}}=await sb.auth.getSession();
+  if(!session){cur=null;db=newDB();return}
+  const{data:p}=await sb.from('profiles').select('*').eq('id',session.user.id).single();
+  if(!p){cur=null;db=newDB();return}
+  cur=prof(p);
+  const[L,E,G,C,R,U]=await Promise.all([['tracking_links','created_at'],['tracking_events','occurred_at'],['geolocation_events','captured_at'],['geolocation_consents','consented_at'],['tracking_reports','created_at'],['profiles','created_at']].map(([t,o])=>fetchAll(t,o)));
+  db={users:U.map(prof),links:L.map(camel),events:E.map(camel),geoEvents:G.map(camel),consents:C.map(camel),reports:R.map(camel),audit:[]};
+}
+async function pub(body){try{const r=await fetch(FN_URL,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_ANON_KEY},body:JSON.stringify(body)});return await r.json()}catch{return{error:'Network error. Please try again.'}}}
+async function pubLink(body){const r=await pub(body);const l=r.link||null;if(l)PL[l.id]=l;return l}
+const utmParams=()=>Object.fromEntries(['utm_source','utm_medium','utm_campaign'].map(k=>[k,new URLSearchParams(location.search).get(k)]));
+const LOADING=()=>mount(pubShell('<div class="card p-8 text-center text-[13px] text-ink-400">Loading…</div>'));
+
+/* ---------------- auth ---------------- */
+const me=()=>cur;
+async function register(name,email,pass){
+  email=email.trim().toLowerCase();
+  if(!name.trim())return{ok:false,error:'Display name is required.'};
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return{ok:false,error:'Enter a valid email address.'};
+  if(pass.length<8)return{ok:false,error:'Password must be at least 8 characters.'};
+  const{data,error}=await sb.auth.signUp({email,password:pass,options:{data:{display_name:name.trim()},emailRedirectTo:location.origin+location.pathname}});
+  if(error)return{ok:false,error:error.message};
+  if(!data.session)return{ok:true,confirm:true};
+  await hydrate();return{ok:true,user:cur};
+}
+async function login(email,pass){
+  const{error}=await sb.auth.signInWithPassword({email:email.trim().toLowerCase(),password:pass});
+  if(error)return{ok:false,error:'Invalid email or password.'};
+  await hydrate();return cur?{ok:true,user:cur}:{ok:false,error:'Profile not found. Check the schema was installed.'};
+}
+async function logout(){await sb.auth.signOut({scope:'local'});cur=null;db=newDB();location.hash='#/';route()}
+const isAdmin=()=>me()?.role==='admin';
+const myLinks=()=>{const u=me();if(!u)return[];return db.links.filter(l=>l.ownerId===u.id)};
+
+/* ---------------- theme ---------------- */
+function applyTheme(){const t=localStorage.getItem(THEME_KEY)||'light';document.documentElement.classList.toggle('dark',t==='dark')}
+function toggleTheme(){localStorage.setItem(THEME_KEY,document.documentElement.classList.contains('dark')?'light':'dark');applyTheme();route()}
+applyTheme();
+
+/* ---------------- UI state ---------------- */
+const ui={range:30,tab:'overview',page:1,perPage:12,q:'',linkFilter:'',typeFilter:'',deviceFilter:'',countryFilter:'',analyticsLink:null,mobileNav:false,notif:false,profileMenu:false,compare:false};
+let charts=[],leafletMap=null;
+function destroyViz(){charts.forEach(c=>{try{c.destroy()}catch{}});charts=[];if(leafletMap){try{leafletMap.remove()}catch{}leafletMap=null}}
+function mount(html,after){destroyViz();$('#app').innerHTML=html;window.scrollTo(0,0);if(after)after()}
+
+/* ---------------- icons (lucide-style inline) ---------------- */
+const IC={
+ link:'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
+ chart:'M3 3v18h18M8 17V9m5 8V5m5 12v-6',
+ radar:'M12 20h.01M2 8.82a15 15 0 0 1 20 0M5 12.86a10 10 0 0 1 14 0M8.5 16.43a5 5 0 0 1 7 0',
+ pin:'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0ZM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+ users:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+ shield:'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z',
+ flag:'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7',
+ gear:'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+ home:'m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 22V12h6v10',
+ globe:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
+ eye:'M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+ copy:'M8 8V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2M6 8H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2',
+ qr:'M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h2v2h-2zM19 15h2v2h-2zM15 19h2v2h-2zM19 19h2v2h-2z',
+ sun:'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42',
+ moon:'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z',
+ bell:'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0',
+ search:'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM21 21l-4.3-4.3',
+ menu:'M4 6h16M4 12h16M4 18h16',
+ x:'M18 6 6 18M6 6l12 12',
+ check:'M20 6 9 17l-5-5',
+ alert:'M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
+ clock:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 6v6l4 2',
+ dl:'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+ ext:'M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
+ trash:'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+ lock:'M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2ZM7 11V7a5 5 0 0 1 10 0v4',
+ zap:'M13 2 3 14h9l-1 8 10-12h-9l1-8z',
+ mouse:'M12 2v4m0 12v4M9 5a3 3 0 0 1 6 0v14a3 3 0 0 1-6 0z',
+ phone:'M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2ZM12 18h.01',
+ monitor:'M2 3h20v14H2zM8 21h8m-4-4v4',
+ inbox:'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
+ logout:'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+ chev:'m9 18 6-6-6-6',
+ ban:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM4.93 4.93l14.14 14.14',
+ refresh:'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5',
+ info:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 16v-4m0-4h.01',
+ key:'m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4'};
+const ic=(n,c='w-4 h-4')=>`<svg class="${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${IC[n]}"/></svg>`;
+
+/* ================================================================
+   LANDING PAGE
+================================================================ */
+function vLanding(){
+  const stat=(l,v,up)=>`<div class="rounded-xl border border-ink-200/70 dark:border-ink-700/60 bg-white/80 dark:bg-ink-900/80 p-3"><div class="text-[10px] font-semibold uppercase tracking-wider text-ink-400">${l}</div><div class="text-lg font-extrabold text-ink-900 dark:text-white mt-0.5">${v}</div><div class="text-[10px] font-semibold text-emerald-500">${up}</div></div>`;
+  const feat=(icon,t,d)=>`<div class="card p-6 hover:border-brand-300 dark:hover:border-brand-700 hover:-translate-y-0.5 transition-all">
+    <div class="stat-ic bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 mb-4">${ic(icon,'w-5 h-5')}</div>
+    <h3 class="font-bold text-[15px] mb-1.5">${t}</h3><p class="text-[13px] leading-relaxed text-ink-500 dark:text-ink-400">${d}</p></div>`;
+  return `
+  <div class="min-h-screen bg-white dark:bg-ink-950">
+    <header class="sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-ink-950/80 border-b border-ink-100 dark:border-ink-800">
+      <div class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">${logo(32)}<span class="font-extrabold text-[17px] tracking-tight">IP Tracker</span></div>
+        <nav class="hidden md:flex items-center gap-7 text-[13.5px] font-medium text-ink-500 dark:text-ink-400">
+          <a href="#features" class="hover:text-ink-900 dark:hover:text-white transition">Features</a>
+          <a href="#privacy" class="hover:text-ink-900 dark:hover:text-white transition">Privacy</a>
+          <button onclick="toggleTheme()" class="text-ink-400 hover:text-ink-700 dark:hover:text-ink-200">${ic(document.documentElement.classList.contains('dark')?'sun':'moon','w-[18px] h-[18px]')}</button>
+        </nav>
+        <div class="flex items-center gap-2.5">
+          <button onclick="location.hash='#/login'" class="btn-ghost px-4 py-2 text-[13px]">Sign in</button>
+          <button onclick="location.hash='#/register'" class="btn-primary px-4 py-2 text-[13px]">Get Started</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="relative hero-grid">
+      <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white dark:to-ink-950 pointer-events-none"></div>
+      <div class="max-w-6xl mx-auto px-5 pt-20 pb-14 text-center relative">
+        <div class="inline-flex items-center gap-2 rounded-full border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10 px-3.5 py-1.5 text-[12px] font-semibold text-brand-700 dark:text-brand-300 mb-6">
+          ${ic('shield','w-3.5 h-3.5')} Privacy-first analytics · consent-based geolocation
+        </div>
+        <h1 class="text-[42px] md:text-[64px] leading-[1.04] font-extrabold tracking-tight">Understand <span class="bg-gradient-to-r from-brand-600 to-violet-500 bg-clip-text text-transparent">Every Visit.</span></h1>
+        <p class="mt-5 max-w-2xl mx-auto text-[15.5px] md:text-[17px] leading-relaxed text-ink-500 dark:text-ink-400">Create short tracking links, measure traffic, analyze visitor trends, and request location access transparently with consent-based geolocation.</p>
+        <div class="mt-8 flex items-center justify-center gap-3 flex-wrap">
+          <button onclick="location.hash='#/register'" class="btn-primary px-6 py-3 text-[14.5px]">Get Started ${ic('chev','w-4 h-4')}</button>
+        </div>
+        
+
+      </div>
+    </section>
+
+    <section id="features" class="max-w-6xl mx-auto px-5 py-20">
+      <div class="text-center mb-12"><h2 class="text-3xl font-extrabold tracking-tight">Everything you need to measure traffic responsibly</h2>
+      <p class="mt-3 text-ink-500 dark:text-ink-400 text-[15px]">Four tracking tools. One transparent analytics platform.</p></div>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        ${feat('link','Short URL Tracking','Generate compact links that record permitted visit analytics before redirecting visitors to your destination.')}
+        ${feat('eye','Pixel Analytics','One-pixel PNG endpoints for appropriate email & page analytics — with honest disclosure that a pixel load never proves an email was read.')}
+        ${feat('pin','Consent-Based Geolocation','Links that explain the purpose first, then request browser location permission only after an explicit visitor click.')}
+        ${feat('chart','Traffic Analytics','Trends, device statistics, referral sources, UTM campaigns and approximate geographic distribution — requests, visits and unique estimates clearly separated.')}
+        ${feat('shield','Privacy & Security','Hashed tracking codes, strict destination validation, masked IPs by default, retention limits and deletion controls.')}
+        ${feat('flag','Reporting & Moderation','Visitors can report phishing, malware or spam. A full admin review queue with disable / restore / remove actions.')}
+      </div>
+    </section>
+
+    <section id="privacy" class="border-t border-ink-100 dark:border-ink-800 bg-ink-50/60 dark:bg-ink-900/40">
+      <div class="max-w-4xl mx-auto px-5 py-16 text-center">
+        <div class="stat-ic bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 mx-auto mb-4">${ic('lock','w-5 h-5')}</div>
+        <h2 class="text-2xl font-extrabold tracking-tight">Track Visits. Understand Traffic. Respect Privacy.</h2>
+        <p class="mt-3 text-[14px] leading-relaxed text-ink-500 dark:text-ink-400 max-w-2xl mx-auto">IP-based geolocation is approximate and labeled as such. Precise GPS is never collected silently — it requires an explicit, purpose-disclosed browser permission. Optional browser signals are off by default. Retention and deletion are first-class features, designed with regulations such as Malaysia's PDPA in mind.</p>
+        <button onclick="location.hash='#/register'" class="btn-primary px-6 py-3 text-[14px] mt-7">Start tracking responsibly</button>
+      </div>
+    </section>
+    <footer class="border-t border-ink-100 dark:border-ink-800 py-8 text-center text-[12px] text-ink-400">IP Tracker · Track visits. Understand traffic. Respect privacy.</footer>
+  </div>`;
+}
+function logo(s=30){return`<svg width="${s}" height="${s}" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="11" fill="url(#lg)"/><path d="M20 29s-8-5.4-8-12a8 8 0 1 1 16 0c0 6.6-8 12-8 12Z" stroke="#fff" stroke-width="2.4" fill="none"/><circle cx="20" cy="17" r="3" fill="#fff"/><defs><linearGradient id="lg" x1="0" y1="0" x2="40" y2="40"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg>`}
+
+/* ================================================================
+   AUTH PAGES
+================================================================ */
+function authShell(inner){
+  return `<div class="min-h-screen flex items-center justify-center px-5 hero-grid bg-white dark:bg-ink-950">
+    <div class="w-full max-w-sm fadein">
+      <div class="flex items-center justify-center gap-2.5 mb-7">${logo(36)}<span class="font-extrabold text-xl tracking-tight">IP Tracker</span></div>
+      <div class="card p-7">${inner}</div>
+      <p class="text-center text-[12px] text-ink-400 mt-5"><a href="#/" class="hover:text-brand-500">← Back to home</a></p>
+    </div></div>`;
+}
+function vLogin(){return authShell(`
+  <h1 class="text-lg font-extrabold mb-1">Welcome back</h1><p class="text-[13px] text-ink-500 mb-5">Sign in to your analytics workspace.</p>
+  <form onsubmit="Actions.login(event)">
+    <label class="label">Email</label><input name="email" type="email" required class="input mb-3.5" placeholder="you@company.com"/>
+    <label class="label">Password</label><input name="password" type="password" required class="input mb-1.5" placeholder="••••••••"/>
+    <div class="text-right mb-4"><button type="button" onclick="Actions.forgot(this.form.email.value)" class="text-[12px] font-medium text-brand-600 hover:underline">Forgot password?</button></div>
+    <button class="btn-primary w-full py-2.5 text-[14px]">Sign in</button>
+  </form>
+  <div class="mt-4 pt-4 border-t border-ink-100 dark:border-ink-800 text-center space-y-2">
+    <p class="text-[13px] text-ink-500">No account? <a href="#/register" class="font-semibold text-brand-600 hover:underline">Create one</a></p>
+  </div>`)}
+function vRegister(){return authShell(`
+  <h1 class="text-lg font-extrabold mb-1">Create your account</h1><p class="text-[13px] text-ink-500 mb-5">We will email you a confirmation link.</p>
+  <form onsubmit="Actions.register(event)">
+    <label class="label">Display name</label><input name="name" required class="input mb-3.5" placeholder="Ada Lovelace"/>
+    <label class="label">Email</label><input name="email" type="email" required class="input mb-3.5" placeholder="you@company.com"/>
+    <label class="label">Password</label><input name="password" type="password" required minlength="8" class="input mb-1.5" placeholder="Min. 8 characters"/>
+    <p class="text-[11.5px] text-ink-400 mb-4">By registering you agree to collect analytics transparently and lawfully.</p>
+    <button class="btn-primary w-full py-2.5 text-[14px]">Create account</button>
+  </form>
+  <p class="mt-4 pt-4 border-t border-ink-100 dark:border-ink-800 text-center text-[13px] text-ink-500">Have an account? <a href="#/login" class="font-semibold text-brand-600 hover:underline">Sign in</a></p>`)}
+
+/* ================================================================
+   APP SHELL
+================================================================ */
+const NAV=[
+ ['overview','Overview','home'],['urls','Short URLs','link'],['pixels','Pixel Trackers','eye'],['geo','Geolocation Links','pin'],
+ ['analytics','Analytics','chart'],['logs','Visitor Logs','users'],['reports','Reports','flag'],['settings','Settings','gear']];
+function shell(sub,content,after){
+  const u=me();const pending=db.reports.filter(r=>r.status==='pending').length;
+  const item=([id,l,i])=>`<a class="navitem ${sub===id?'active':''}" href="#/app/${id}">${ic(i,'w-[17px] h-[17px]')}${l}
+    ${id==='reports'&&pending&&isAdmin()?`<span class="ml-auto badge bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400">${pending}</span>`:''}</a>`;
+  const adminItem=isAdmin()?item(['admin','Admin Moderation','shield']):'';
+  const notifs=db.events.filter(e=>myLinks().some(l=>l.id===e.linkId)).sort((a,b)=>b.occurredAt-a.occurredAt).slice(0,5);
+  const html=`
+  <div class="min-h-screen lg:flex">
+    ${ui.mobileNav?`<div class="fixed inset-0 z-40 bg-ink-950/50 lg:hidden" onclick="ui.mobileNav=false;route()"></div>`:''}
+    <aside class="fixed z-50 inset-y-0 left-0 w-64 bg-white dark:bg-ink-900 border-r border-ink-200 dark:border-ink-800 p-4 flex flex-col transition-transform lg:translate-x-0 ${ui.mobileNav?'translate-x-0':'-translate-x-full'} lg:static lg:z-auto">
+      <div class="flex items-center gap-2.5 px-2 h-11 mb-3">${logo(30)}<span class="font-extrabold text-[15.5px] tracking-tight">IP Tracker</span>
+        <button class="ml-auto lg:hidden text-ink-400" onclick="ui.mobileNav=false;route()">${ic('x')}</button></div>
+      <nav class="space-y-0.5 flex-1 overflow-y-auto">${NAV.map(item).join('')}${adminItem}</nav>
+      <div class="mt-3 rounded-xl bg-ink-50 dark:bg-ink-800/60 border border-ink-200 dark:border-ink-700 p-3">
+        <div class="flex items-center gap-2.5"><div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-violet-500 text-white flex items-center justify-center text-[12px] font-bold">${esc(u.displayName[0].toUpperCase())}</div>
+        <div class="min-w-0"><div class="text-[13px] font-semibold truncate">${esc(u.displayName)}</div><div class="text-[11px] text-ink-400 truncate">${esc(u.email)}</div></div></div>
+        ${u.role==='admin'?'<div class="badge bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 mt-2">Admin</div>':''}
+      </div>
+    </aside>
+    <div class="flex-1 min-w-0 flex flex-col min-h-screen">
+      <header class="sticky top-0 z-30 h-16 bg-white/85 dark:bg-ink-950/85 backdrop-blur-xl border-b border-ink-200 dark:border-ink-800 flex items-center gap-3 px-4 lg:px-6">
+        <button class="lg:hidden text-ink-500" onclick="ui.mobileNav=true;route()">${ic('menu','w-5 h-5')}</button>
+        <div class="hidden md:flex items-center gap-2 flex-1 max-w-sm rounded-xl border border-ink-200 dark:border-ink-700 bg-ink-50 dark:bg-ink-900 px-3 py-2">
+          ${ic('search','w-4 h-4 text-ink-400')}<input id="globalSearch" placeholder="Search links…" class="bg-transparent text-[13px] flex-1 focus:outline-none placeholder-ink-400"
+            onkeydown="if(event.key==='Enter'){ui.q=this.value;location.hash='#/app/urls';route()}"/></div>
+        <div class="ml-auto flex items-center gap-1.5">
+          <select onchange="ui.range=+this.value;route()" class="rounded-xl border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900 text-[12.5px] font-medium px-2.5 py-2 focus:outline-none">
+            ${[7,30,90].map(r=>`<option value="${r}" ${ui.range===r?'selected':''}>Last ${r} days</option>`).join('')}</select>
+          <div class="relative">
+            <button onclick="ui.notif=!ui.notif;ui.profileMenu=false;route()" class="p-2 rounded-xl hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500 relative">${ic('bell','w-[18px] h-[18px]')}
+              ${notifs.length?'<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500"></span>':''}</button>
+            ${ui.notif?`<div class="absolute right-0 mt-2 w-80 card p-2 z-50 fadein"><div class="px-3 py-2 text-[12px] font-bold uppercase tracking-wider text-ink-400">Recent activity</div>
+              ${notifs.length?notifs.map(e=>`<div class="px-3 py-2 rounded-lg hover:bg-ink-50 dark:hover:bg-ink-800 text-[12.5px] flex gap-2.5 items-start">
+                <span class="mt-0.5 text-brand-500">${ic(e.eventType==='pixel_load'?'eye':'zap','w-3.5 h-3.5')}</span>
+                <span class="flex-1"><b>${e.eventType==='pixel_load'?'Pixel load':'Visit'}</b> · ${esc(e.city)}, ${esc(e.countryCode)} <span class="text-ink-400">· ${timeAgo(e.occurredAt)}</span></span></div>`).join('')
+              :'<div class="px-3 py-4 text-[12.5px] text-ink-400">No activity yet.</div>'}
+              <div class="px-3 py-2 text-[11px] text-ink-400 border-t border-ink-100 dark:border-ink-800 mt-1">Latest activity across your links.</div></div>`:''}
+          </div>
+          <button onclick="toggleTheme()" class="p-2 rounded-xl hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500">${ic(document.documentElement.classList.contains('dark')?'sun':'moon','w-[18px] h-[18px]')}</button>
+          <div class="relative">
+            <button onclick="ui.profileMenu=!ui.profileMenu;ui.notif=false;route()" class="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-violet-500 text-white flex items-center justify-center text-[13px] font-bold">${esc(u.displayName[0].toUpperCase())}</button>
+            ${ui.profileMenu?`<div class="absolute right-0 mt-2 w-52 card p-1.5 z-50 fadein">
+              <div class="px-3 py-2.5 border-b border-ink-100 dark:border-ink-800"><div class="text-[13px] font-semibold">${esc(u.displayName)}</div><div class="text-[11.5px] text-ink-400">${esc(u.email)}</div></div>
+              <a href="#/app/settings" class="navitem mt-1">${ic('gear','w-4 h-4')}Account settings</a>
+              <button onclick="logout()" class="navitem w-full text-rose-500">${ic('logout','w-4 h-4')}Sign out</button></div>`:''}
+          </div>
+        </div>
+      </header>
+      <main class="flex-1 p-4 lg:p-7 max-w-[1400px] w-full mx-auto fadein">${content}</main>
+    </div></div>`;
+  mount(html,after);
+}
+
+function pageHead(t,d,extra=''){return`<div class="flex flex-wrap items-start justify-between gap-3 mb-6"><div><h1 class="text-[22px] font-extrabold tracking-tight">${t}</h1><p class="text-[13.5px] text-ink-500 dark:text-ink-400 mt-1 max-w-2xl">${d}</p></div><div class="flex gap-2">${extra}</div></div>`}
+function statCard(icon,label,value,sub,color='brand'){const c={brand:'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400',emerald:'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600',violet:'bg-violet-50 dark:bg-violet-500/10 text-violet-600',amber:'bg-amber-50 dark:bg-amber-500/10 text-amber-600',rose:'bg-rose-50 dark:bg-rose-500/10 text-rose-600',sky:'bg-sky-50 dark:bg-sky-500/10 text-sky-600'}[color];
+  return`<div class="card p-4.5 p-5 flex items-start gap-3.5"><div class="stat-ic ${c}">${ic(icon,'w-[18px] h-[18px]')}</div>
+  <div class="min-w-0"><div class="text-[11px] font-bold uppercase tracking-wider text-ink-400">${label}</div>
+  <div class="text-[22px] font-extrabold tracking-tight mt-0.5 truncate">${value}</div>
+  <div class="text-[11.5px] text-ink-400 mt-0.5 truncate">${sub}</div></div></div>`}
+const typeBadge=t=>({short_url:'<span class="badge bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-300">Short URL</span>',pixel:'<span class="badge bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-300">Pixel</span>',geolocation:'<span class="badge bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">Geolocation</span>'}[t]);
+const statusBadge=l=>{const exp=l.expiresAt&&l.expiresAt<Date.now();
+  if(l.status==='disabled')return'<span class="badge bg-rose-50 dark:bg-rose-500/10 text-rose-600">Disabled</span>';
+  if(l.status==='removed')return'<span class="badge bg-ink-100 dark:bg-ink-800 text-ink-500">Removed</span>';
+  if(exp)return'<span class="badge bg-amber-50 dark:bg-amber-500/10 text-amber-600">Expired</span>';
+  return'<span class="badge bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600">Active</span>'};
+const shortURL=l=>location.origin+location.pathname+'#/r/'+l.slug;
+const geoURL=l=>location.origin+location.pathname+'#/g/'+l.slug;
+const evCount=id=>db.events.filter(e=>e.linkId===id).length;
+const emptyState=(icon,t,d,btn='')=>`<div class="card p-12 text-center"><div class="stat-ic bg-ink-100 dark:bg-ink-800 text-ink-400 mx-auto mb-4 !w-12 !h-12">${ic(icon,'w-6 h-6')}</div>
+  <h3 class="font-bold text-[15px]">${t}</h3><p class="text-[13px] text-ink-400 mt-1.5 max-w-sm mx-auto">${d}</p><div class="mt-5">${btn}</div></div>`;
+
+/* ================================================================
+   OVERVIEW
+================================================================ */
+function vOverview(){
+  const links=myLinks();const since=Date.now()-ui.range*day;
+  const evs=db.events.filter(e=>links.some(l=>l.id===e.linkId));
+  const inR=evs.filter(e=>e.occurredAt>=since);
+  const uniq=new Set(inR.map(e=>e.visitorToken)).size;
+  const today=evs.filter(e=>e.occurredAt>=Date.now()-day).length;
+  const geoEvs=db.geoEvents.filter(g=>links.some(l=>l.id===g.trackingLinkId)).length;
+  const topC=Object.entries(inR.reduce((m,e)=>(m[e.country]=(m[e.country]||0)+1,m),{})).sort((a,b)=>b[1]-a[1])[0];
+  const content=`
+  ${pageHead('Overview','Your tracking resources and traffic at a glance.',`<button onclick="location.hash='#/app/urls'" class="btn-primary px-4 py-2 text-[13px]">${ic('zap','w-4 h-4')}New tracking link</button>`)}
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
+    ${statCard('chart','Total requests',fmt(inR.length),`across ${links.length} link${links.length===1?'':'s'}`)}
+    ${statCard('users','Est. unique visitors',fmt(uniq),'privacy-preserving daily tokens','violet')}
+    ${statCard('zap','Requests today',fmt(today),'rolling 24 hours','emerald')}
+    ${statCard('pin','Consent location events',fmt(geoEvs),'explicit GPS shares only','sky')}
+  </div>
+  <div class="grid lg:grid-cols-3 gap-4 mb-6">
+    <div class="card p-5 lg:col-span-2"><div class="flex items-center justify-between mb-4"><h3 class="font-bold text-[14.5px]">Traffic — last ${ui.range} days</h3>
+      <span class="text-[11.5px] text-ink-400">requests · unique estimate</span></div><div class="h-60"><canvas id="ovChart"></canvas></div></div>
+    <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">Devices</h3><div class="h-44"><canvas id="ovDev"></canvas></div>
+      <div class="mt-4 pt-4 border-t border-ink-100 dark:border-ink-800 text-[12.5px] space-y-2">
+        <div class="flex justify-between"><span class="text-ink-500">Top country</span><b>${topC?esc(topC[0]):'—'}</b></div>
+        <div class="flex justify-between"><span class="text-ink-500">Pending reports</span><b>${db.reports.filter(r=>r.status==='pending').length}</b></div>
+        <div class="flex justify-between"><span class="text-ink-500">Retention default</span><b>${me().settings.retentionDays} days</b></div></div></div>
+  </div>
+  <div class="card"><div class="flex items-center justify-between px-5 py-4 border-b border-ink-100 dark:border-ink-800"><h3 class="font-bold text-[14.5px]">Your tracking links</h3>
+    <a href="#/app/urls" class="text-[12.5px] font-semibold text-brand-600 hover:underline">Manage all →</a></div>
+    ${links.length?`<div class="divide-y divide-ink-100 dark:divide-ink-800">${links.slice(0,5).map(linkRow).join('')}</div>`
+    :emptyState('link','No tracking links yet','Create your first short URL, pixel, or consent-based geolocation link to start measuring traffic.',`<button onclick="location.hash='#/app/urls'" class="btn-primary px-4 py-2 text-[13px]">Create a link</button>`)}</div>`;
+  shell('overview',content,()=>{buildTimeline('ovChart',inR);buildDoughnut('ovDev',inR)});
+}
+const linkRow=l=>`<div class="flex items-center gap-3 px-5 py-3.5 hover:bg-ink-50/70 dark:hover:bg-ink-800/40 transition">
+  <div class="stat-ic ${l.linkType==='pixel'?'bg-violet-50 dark:bg-violet-500/10 text-violet-500':l.linkType==='geolocation'?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500':'bg-brand-50 dark:bg-brand-500/10 text-brand-500'}">${ic(l.linkType==='pixel'?'eye':l.linkType==='geolocation'?'pin':'link','w-4 h-4')}</div>
+  <div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold text-[13.5px] truncate">${esc(l.title||l.slug)}</span>${typeBadge(l.linkType)}${statusBadge(l)}</div>
+  <div class="text-[11.5px] text-ink-400 mono truncate">${l.linkType==='pixel'?'1×1 PNG endpoint':esc(l.destinationUrl)}</div></div>
+  <div class="text-right shrink-0"><div class="font-bold text-[14px]">${fmt(evCount(l.id))}</div><div class="text-[10.5px] text-ink-400">requests</div></div>
+  <button onclick="Actions.openAnalytics('${l.id}')" class="btn-ghost px-3 py-1.5 text-[12px]">${ic('chart','w-3.5 h-3.5')}Analytics</button></div>`;
+
+/* ================================================================
+   SHORT URLS / PIXELS / GEO — tool pages
+================================================================ */
+function linkCard(l){
+  const isPx=l.linkType==='pixel', isGeo=l.linkType==='geolocation';
+  const url=isPx?FN_URL+'?p='+encodeURIComponent(l.slug):isGeo?geoURL(l):shortURL(l);
+  return `<div class="card p-5">
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><h3 class="font-bold text-[15px]">${esc(l.title||l.slug)}</h3>${typeBadge(l.linkType)}${statusBadge(l)}</div>
+        <div class="text-[12px] text-ink-400 mt-1">Created ${timeAgo(l.createdAt)} · Retention ${l.retentionDays}d ${l.expiresAt?'· Expires '+new Date(l.expiresAt).toLocaleDateString():''}</div></div>
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="Actions.openAnalytics('${l.id}')" class="btn-ghost px-3 py-1.5 text-[12px]">${ic('chart','w-3.5 h-3.5')}Analytics</button>
+        ${l.status==='active'?`<button onclick="Actions.toggleLink('${l.id}')" class="btn-ghost px-3 py-1.5 text-[12px] text-amber-600">${ic('ban','w-3.5 h-3.5')}Disable</button>`
+        :l.status==='disabled'?`<button onclick="Actions.toggleLink('${l.id}')" class="btn-ghost px-3 py-1.5 text-[12px] text-emerald-600">${ic('check','w-3.5 h-3.5')}Restore</button>`:''}
+        <button onclick="Actions.deleteLink('${l.id}')" class="btn-ghost px-3 py-1.5 text-[12px] text-rose-500">${ic('trash','w-3.5 h-3.5')}</button></div></div>
+    <div class="mt-4 flex items-center gap-2 rounded-xl bg-ink-50 dark:bg-ink-950 border border-ink-200 dark:border-ink-800 px-3.5 py-2.5">
+      <span class="mono text-[12.5px] text-brand-600 dark:text-brand-400 truncate flex-1">${esc(url)}</span>
+      <button onclick="copyText('${url}')" class="text-ink-400 hover:text-brand-500 shrink-0" title="Copy">${ic('copy','w-4 h-4')}</button>
+      <button onclick="Actions.qr('${l.id}')" class="text-ink-400 hover:text-brand-500 shrink-0" title="QR code">${ic('qr','w-4 h-4')}</button>
+      ${!isPx?`<a href="${url}" target="_blank" class="text-ink-400 hover:text-brand-500 shrink-0" title="Test">${ic('ext','w-4 h-4')}</a>`:''}</div>
+    ${isPx?`<div class="mt-3 rounded-xl bg-ink-950 text-ink-300 mono text-[11.5px] p-3 overflow-x-auto">&lt;img src="${esc(url)}" width="1" height="1" alt="" style="display:none"/&gt;</div>
+      <p class="text-[11.5px] text-ink-400 mt-2 flex gap-1.5">${ic('info','w-3.5 h-3.5 shrink-0 mt-px')}Email clients may block, proxy, preload or cache images — a pixel request never proves a person opened or read a message.</p>`:''}
+    <div class="mt-3.5 flex items-center gap-4 text-[12px] text-ink-400 flex-wrap">
+      <span class="flex items-center gap-1.5">${ic('key','w-3.5 h-3.5')}Tracking code: stored hashed (shown once at creation)</span>
+      <span>${fmt(evCount(l.id))} requests</span>
+      ${l.destinationUrl&&!isPx?`<span>→ ${esc(new URL(l.destinationUrl).hostname)}</span>`:''}</div></div>`;
+}
+
+function vURLs(){
+  const links=myLinks().filter(l=>l.linkType==='short_url'&&(!ui.q||(l.title||'').toLowerCase().includes(ui.q.toLowerCase())||l.slug.includes(ui.q)));
+  const content=`${pageHead('Short URLs','Send a short link and record eligible visit analytics before forwarding visitors to your destination.')}
+  <div class="card p-6 mb-6"><h3 class="font-bold text-[15px] mb-1">Create Short URL</h3><p class="text-[12.5px] text-ink-400 mb-5">Destinations are validated against unsafe schemes, localhost, private networks and malformed input. Redirects are re-validated server-side in production.</p>
+    <form onsubmit="Actions.createLink(event,'short_url')" class="grid md:grid-cols-2 gap-4">
+      <div class="md:col-span-2"><label class="label">Destination URL *</label><input name="dest" class="input" placeholder="https://example.com/your-page" required/></div>
+      <div><label class="label">Custom slug <span class="font-normal text-ink-400">(optional)</span></label><input name="slug" class="input mono" placeholder="auto-generated"/></div>
+      <div><label class="label">Link title <span class="font-normal text-ink-400">(optional)</span></label><input name="title" class="input" placeholder="Campaign name"/></div>
+      <div><label class="label">Expiration <span class="font-normal text-ink-400">(optional)</span></label><input name="expires" type="date" class="input"/></div>
+      <div><label class="label">Analytics retention</label><select name="retention" class="input">${[7,30,90,180,365].map(d=>`<option ${d===me().settings.retentionDays?'selected':''} value="${d}">${d} days</option>`).join('')}</select></div>
+      <div class="md:col-span-2 flex items-center gap-3"><button class="btn-primary px-5 py-2.5 text-[13.5px]">${ic('zap','w-4 h-4')}Create URL</button>
+      <span class="text-[11.5px] text-ink-400">Slugs are cryptographically random by default; reserved paths are rejected.</span></div></form></div>
+  ${links.length?`<div class="space-y-4">${links.map(linkCard).join('')}</div>`:emptyState('link','No short URLs yet','Create your first trackable short link above.')}`;
+  shell('urls',content);
+}
+function vPixels(){
+  const links=myLinks().filter(l=>l.linkType==='pixel');
+  const content=`${pageHead('Pixel Trackers','Generate a one-pixel PNG URL for email or page analytics where loading a tracking image is appropriate and disclosed.')}
+  <div class="card p-6 mb-6"><h3 class="font-bold text-[15px] mb-1">Create Invisible Pixel</h3>
+    <p class="text-[12.5px] text-ink-400 mb-4 max-w-3xl">Record only permitted, disclosed analytics. In production the endpoint returns a valid <span class="kbd">image/png</span> with no-cache headers. A pixel load is <b>not</b> proof an email was read.</p>
+    <form onsubmit="Actions.createLink(event,'pixel')" class="flex flex-wrap gap-3 items-end">
+      <div class="flex-1 min-w-56"><label class="label">Pixel label</label><input name="title" class="input" placeholder="e.g. January newsletter" required/></div>
+      <div><label class="label">Retention</label><select name="retention" class="input">${[7,30,90,180].map(d=>`<option value="${d}" ${d===me().settings.retentionDays?'selected':''}>${d} days</option>`).join('')}</select></div>
+      <button class="btn-primary px-5 py-2.5 text-[13.5px]">${ic('eye','w-4 h-4')}Create Pixel</button></form></div>
+  ${links.length?`<div class="space-y-4">${links.map(linkCard).join('')}</div>`:emptyState('eye','No pixels yet','Create a pixel to embed in disclosed email or page analytics.')}`;
+  shell('pixels',content);
+}
+function vGeo(){
+  const links=myLinks().filter(l=>l.linkType==='geolocation');
+  const content=`${pageHead('Geolocation Links','Create a link that requests the visitor\u2019s browser geolocation permission before collecting precise GPS coordinates.')}
+  <div class="card p-6 mb-6"><h3 class="font-bold text-[15px] mb-1">Create Geolocation Link</h3>
+    <p class="text-[12.5px] text-ink-400 mb-5 max-w-3xl">The visitor landing page explains the purpose, requests permission only after an explicit click via <span class="kbd">getCurrentPosition()</span>, and always offers “continue without sharing”. HTTPS is required in production.</p>
+    <form onsubmit="Actions.createLink(event,'geolocation')" class="grid md:grid-cols-2 gap-4">
+      <div><label class="label">Destination URL *</label><input name="dest" class="input" placeholder="https://example.com/stores" required/></div>
+      <div><label class="label">Link title</label><input name="title" class="input" placeholder="Store pickup locator"/></div>
+      <div class="md:col-span-2"><label class="label">Purpose of location collection *</label><textarea name="purpose" class="input" rows="2" required placeholder="Explain clearly why you need the visitor's precise location, e.g. to show the nearest pickup outlet."></textarea></div>
+      <div><label class="label">Location data retention</label><select name="retention" class="input">${[1,7,30,90].map(d=>`<option value="${d}">${d} day${d>1?'s':''}</option>`).join('')}</select></div>
+      <div class="flex items-end"><button class="btn-primary px-5 py-2.5 text-[13.5px]">${ic('pin','w-4 h-4')}Create Geolocation Link</button></div></form></div>
+  ${links.length?`<div class="space-y-4">${links.map(linkCard).join('')}</div>`:emptyState('pin','No geolocation links yet','Create a consent-based location link above.')}`;
+  shell('geo',content);
+}
+
+/* ================================================================
+   ANALYTICS — access + dashboard
+================================================================ */
+function vAnalyticsAccess(){
+  const links=myLinks();
+  const content=`${pageHead('View Tracker Analytics','Enter your tracking code to view authorized traffic analytics, visitor logs, maps and aggregate counts.')}
+  <div class="grid lg:grid-cols-2 gap-5">
+    <div class="card p-6"><div class="stat-ic bg-brand-50 dark:bg-brand-500/10 text-brand-500 mb-4">${ic('key','w-5 h-5')}</div>
+      <h3 class="font-bold text-[15px] mb-1">Open by tracking code</h3>
+      <p class="text-[12.5px] text-ink-400 mb-4">Codes are validated server-side against hashed storage, rate-limited against enumeration, and ownership-checked. Invalid or unauthorized codes return one generic error.</p>
+      <form onsubmit="Actions.codeAccess(event)"><label class="label">Tracking code</label>
+        <input name="code" class="input mono mb-4" placeholder="IPT-XXXX-XXXX-XXXX" required/>
+        <button class="btn-primary w-full py-2.5 text-[13.5px]">Open Analytics</button></form></div>
+    <div class="card p-6"><h3 class="font-bold text-[15px] mb-4">Your resources</h3>
+      ${links.length?`<div class="space-y-1.5">${links.map(l=>`<button onclick="Actions.openAnalytics('${l.id}')" class="w-full flex items-center gap-3 rounded-xl border border-ink-200 dark:border-ink-800 px-4 py-3 hover:border-brand-400 dark:hover:border-brand-600 hover:bg-brand-50/50 dark:hover:bg-brand-500/5 transition text-left">
+        ${ic(l.linkType==='pixel'?'eye':l.linkType==='geolocation'?'pin':'link','w-4 h-4 text-ink-400')}<span class="flex-1 min-w-0"><span class="block font-semibold text-[13.5px] truncate">${esc(l.title||l.slug)}</span>
+        <span class="block text-[11.5px] text-ink-400">${fmt(evCount(l.id))} requests</span></span>${ic('chev','w-4 h-4 text-ink-300')}</button>`).join('')}</div>`
+      :'<p class="text-[13px] text-ink-400">No resources yet. Create one first.</p>'}</div></div>`;
+  shell('analytics',content);
+}
+
+function agg(evs,key){const m={};evs.forEach(e=>{const k=typeof key==='function'?key(e):e[key]??'Unknown';m[k]=(m[k]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1])}
+function barList(rows,total,color='bg-brand-500'){const max=rows[0]?.[1]||1;
+  return rows.slice(0,8).map(([k,v])=>`<div class="mb-2.5"><div class="flex justify-between text-[12px] mb-1"><span class="font-medium truncate text-ink-600 dark:text-ink-300">${esc(k)}</span><span class="text-ink-400">${fmt(v)} · ${(v/total*100).toFixed(1)}%</span></div>
+  <div class="h-1.5 rounded-full bg-ink-100 dark:bg-ink-800"><div class="h-1.5 rounded-full ${color}" style="width:${(v/max*100).toFixed(1)}%"></div></div></div>`).join('')||'<p class="text-[12.5px] text-ink-400">No data in range.</p>'}
+
+function vAnalyticsDash(l){
+  const since=Date.now()-ui.range*day, prevSince=since-ui.range*day;
+  const all=db.events.filter(e=>e.linkId===l.id);
+  const evs=all.filter(e=>e.occurredAt>=since), prev=all.filter(e=>e.occurredAt>=prevSince&&e.occurredAt<since);
+  const uniq=new Set(evs.map(e=>e.visitorToken)).size;
+  const today=all.filter(e=>e.occurredAt>=Date.now()-day).length, week=all.filter(e=>e.occurredAt>=Date.now()-7*day).length;
+  const top=(arr,k)=>agg(arr,k)[0]?.[0]||'—';
+  const geoEvs=db.geoEvents.filter(g=>g.trackingLinkId===l.id);
+  const tabs=[['overview','Overview'],['geo','Geography'],['devices','Devices'],['referrers','Referrers'],['events','Events']];
+  const tabBtn=([id,t])=>`<button onclick="ui.tab='${id}';ui.page=1;route()" class="px-4 py-2 rounded-xl text-[13px] font-semibold transition ${ui.tab===id?'bg-brand-600 text-white shadow-sm':'text-ink-500 hover:bg-ink-100 dark:hover:bg-ink-800'}">${t}</button>`;
+  let body='';
+  if(ui.tab==='overview'){
+    body=`<div class="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-5">
+      ${statCard('chart','Total requests',fmt(evs.length),'raw hits, bots included')}
+      ${statCard('users','Est. unique visitors',fmt(uniq),'daily keyed tokens — an estimate, not identified humans','violet')}
+      ${statCard('zap','Today / this week',`${fmt(today)} / ${fmt(week)}`,'rolling windows','emerald')}
+      ${statCard('pin','Consent GPS events',fmt(geoEvs.length),'explicit shares only','sky')}
+      ${statCard('globe','Top country',esc(top(evs,'country')),'approximate, IP-based')}
+      ${statCard('ext','Top referrer',esc(top(evs,e=>e.referrer?new URL(e.referrer).hostname:'Direct / none')),'privacy-stripped handled gracefully')}
+      ${statCard('monitor','Top device',esc(top(evs,'deviceType')),'from user-agent')}
+      ${statCard('clock','Retention',l.retentionDays+'d','auto-deletion after this period','amber')}</div>
+    <div class="card p-5 mb-5"><div class="flex items-center justify-between flex-wrap gap-2 mb-4"><h3 class="font-bold text-[14.5px]">Traffic timeline</h3>
+      <label class="flex items-center gap-2 text-[12px] font-medium text-ink-500 cursor-pointer"><input type="checkbox" ${ui.compare?'checked':''} onchange="ui.compare=this.checked;route()" class="rounded accent-brand-600"/>Compare previous ${ui.range}d</label></div>
+      <div class="h-64"><canvas id="tlChart"></canvas></div></div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">Countries (approximate)</h3>${barList(agg(evs,'country'),evs.length)}</div>
+      <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">Referrers</h3>${barList(agg(evs,e=>e.referrer?new URL(e.referrer).hostname:'Direct / none'),evs.length,'bg-violet-500')}</div></div>`;
+  }
+  else if(ui.tab==='geo'){
+    body=`<div class="card p-5 mb-4"><div class="flex items-center justify-between flex-wrap gap-2 mb-4"><h3 class="font-bold text-[14.5px]">Approximate IP-based locations</h3>
+      <span class="badge bg-sky-50 dark:bg-sky-500/10 text-sky-600">${ic('info','w-3 h-3')}IP geolocation ≈ city-level · low precision · never an exact residence</span></div>
+      <div id="map" class="h-[380px] rounded-2xl border border-ink-200 dark:border-ink-800"></div>
+      <p class="text-[11.5px] text-ink-400 mt-3">Blue circles: aggregated approximate IP locations. ${l.linkType==='geolocation'?'<b class="text-rose-500">Red diamonds: precise GPS (consent-granted, shown separately).</b>':''} Tiles © OpenStreetMap contributors.</p></div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">Country distribution</h3>${barList(agg(evs,'country'),evs.length)}</div>
+      <div class="card p-0 overflow-hidden"><div class="px-5 py-4 border-b border-ink-100 dark:border-ink-800 font-bold text-[14.5px]">Regions & cities <span class="badge bg-ink-100 dark:bg-ink-800 text-ink-500 ml-1">confidence: low–medium</span></div>
+      <div class="overflow-x-auto max-h-80 overflow-y-auto"><table class="w-full"><thead><tr class="border-b border-ink-100 dark:border-ink-800"><th class="th">City</th><th class="th">Region</th><th class="th">Country</th><th class="th text-right">Visits</th></tr></thead>
+      <tbody>${agg(evs,e=>e.city+'|'+e.region+'|'+e.countryCode).slice(0,15).map(([k,v])=>{const[c,r,cc]=k.split('|');return`<tr class="border-b border-ink-50 dark:border-ink-800/60"><td class="td font-medium">${esc(c)}</td><td class="td text-ink-400">${esc(r)}</td><td class="td text-ink-400">${esc(cc)}</td><td class="td text-right font-semibold">${fmt(v)}</td></tr>`}).join('')||'<tr><td class="td text-ink-400 py-6 text-center" colspan="4">No data.</td></tr>'}</tbody></table></div></div></div>
+    ${l.linkType==='geolocation'?`<div class="card mt-4 p-0 overflow-hidden"><div class="px-5 py-4 border-b border-ink-100 dark:border-ink-800 font-bold text-[14.5px] flex items-center gap-2">${ic('pin','w-4 h-4 text-rose-500')}Precise GPS events — consent-granted only</div>
+      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-ink-100 dark:border-ink-800"><th class="th">Captured</th><th class="th">Latitude</th><th class="th">Longitude</th><th class="th">Accuracy</th><th class="th">Consent</th></tr></thead><tbody>
+      ${geoEvs.sort((a,b)=>b.capturedAt-a.capturedAt).slice(0,20).map(g=>`<tr class="border-b border-ink-50 dark:border-ink-800/60"><td class="td">${fdate(g.capturedAt)}</td><td class="td mono">${g.latitude.toFixed(5)}</td><td class="td mono">${g.longitude.toFixed(5)}</td><td class="td">±${g.accuracyMeters}m</td><td class="td"><span class="badge bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600">granted · v1.2</span></td></tr>`).join('')||'<tr><td colspan="5" class="td text-center py-6 text-ink-400">No consent-granted GPS events.</td></tr>'}</tbody></table></div></div>`:''}`;
+  }
+  else if(ui.tab==='devices'){
+    body=`<div class="grid md:grid-cols-3 gap-4 mb-4">
+      <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">Device type</h3><div class="h-52"><canvas id="devChart"></canvas></div></div>
+      <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">Operating systems</h3>${barList(agg(evs,'operatingSystem'),evs.length,'bg-violet-500')}</div>
+      <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">Browsers</h3>${barList(agg(evs,'browser'),evs.length,'bg-emerald-500')}</div></div>
+    <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-1">Language preferences</h3>
+      <p class="text-[11.5px] text-ink-400 mb-4">From Accept-Language. Screen size & timezone collection is disabled by default and only gathered when explicitly disclosed and enabled.</p>${barList(agg(evs,'language'),evs.length,'bg-amber-500')}</div>`;
+  }
+  else if(ui.tab==='referrers'){
+    const utm=evs.filter(e=>e.utm_source);
+    body=`<div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">Referring domains</h3>${barList(agg(evs,e=>e.referrer?new URL(e.referrer).hostname:'Direct / none'),evs.length,'bg-violet-500')}</div>
+      <div class="card p-5"><h3 class="font-bold text-[14.5px] mb-4">UTM sources</h3>${barList(agg(utm,'utm_source'),evs.length,'bg-brand-500')||'<p class="text-[12.5px] text-ink-400">No UTM-tagged traffic.</p>'}</div></div>
+    <div class="card p-0 overflow-hidden"><div class="px-5 py-4 border-b border-ink-100 dark:border-ink-800 font-bold text-[14.5px]">Campaign parameters</div>
+      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-ink-100 dark:border-ink-800"><th class="th">Source</th><th class="th">Medium</th><th class="th">Campaign</th><th class="th text-right">Requests</th></tr></thead>
+      <tbody>${agg(utm,e=>[e.utm_source,e.utm_medium,e.utm_campaign].join('|')).map(([k,v])=>{const p=k.split('|');return`<tr class="border-b border-ink-50 dark:border-ink-800/60"><td class="td font-medium">${esc(p[0])}</td><td class="td text-ink-400">${esc(p[1])}</td><td class="td text-ink-400">${esc(p[2])}</td><td class="td text-right font-semibold">${fmt(v)}</td></tr>`}).join('')||'<tr><td colspan="4" class="td text-center py-6 text-ink-400">No campaign traffic in this range.</td></tr>'}</tbody></table></div></div>`;
+  }
+  else if(ui.tab==='events'){body=eventsTable(evs,`analytics events — ${esc(l.title||l.slug)}`)}
+  const content=`
+  <div class="flex items-center gap-2 text-[12.5px] text-ink-400 mb-4"><a href="#/app/analytics" class="hover:text-brand-500 font-medium">Analytics</a>${ic('chev','w-3.5 h-3.5')}<span class="text-ink-600 dark:text-ink-300 font-semibold">${esc(l.title||l.slug)}</span></div>
+  <div class="card p-5 mb-5"><div class="flex items-start justify-between flex-wrap gap-3">
+    <div><div class="flex items-center gap-2 flex-wrap"><h1 class="text-[19px] font-extrabold tracking-tight">${esc(l.title||l.slug)}</h1>${typeBadge(l.linkType)}${statusBadge(l)}</div>
+    <div class="text-[12.5px] text-ink-400 mt-1.5 mono">${l.linkType==='pixel'?'1×1 PNG endpoint':esc(l.destinationUrl)}</div></div>
+    <div class="flex gap-2"><button onclick="Actions.exportEvents('${l.id}')" class="btn-ghost px-3.5 py-2 text-[12.5px]">${ic('dl','w-4 h-4')}Export CSV</button>
+    <a href="#/report/${l.id}" class="btn-ghost px-3.5 py-2 text-[12.5px] text-amber-600">${ic('flag','w-4 h-4')}Report</a></div></div></div>
+  <div class="flex gap-1.5 mb-5 overflow-x-auto pb-1">${tabs.map(tabBtn).join('')}</div>${body}`;
+  shell('analytics',content,()=>{
+    if(ui.tab==='overview')buildTimeline('tlChart',evs,ui.compare?prev:null);
+    if(ui.tab==='devices')buildDoughnut('devChart',evs);
+    if(ui.tab==='geo')buildMap(l,evs,geoEvs);
+  });
+}
+
+/* -------- events table (shared) -------- */
+function eventsTable(evs,title){
+  let rows=evs.slice().sort((a,b)=>b.occurredAt-a.occurredAt);
+  if(ui.q)rows=rows.filter(e=>[e.city,e.country,e.browser,e.operatingSystem,e.ipMasked,e.referrer].join(' ').toLowerCase().includes(ui.q.toLowerCase()));
+  if(ui.deviceFilter)rows=rows.filter(e=>e.deviceType===ui.deviceFilter);
+  if(ui.countryFilter)rows=rows.filter(e=>e.countryCode===ui.countryFilter);
+  if(ui.typeFilter)rows=rows.filter(e=>e.eventType===ui.typeFilter);
+  const pages=Math.max(1,Math.ceil(rows.length/ui.perPage));ui.page=Math.min(ui.page,pages);
+  const page=rows.slice((ui.page-1)*ui.perPage,ui.page*ui.perPage);
+  const devIc=d=>({desktop:'monitor',mobile:'phone',tablet:'phone',bot:'zap'}[d]||'monitor');
+  return `<div class="card p-0 overflow-hidden">
+    <div class="px-5 py-4 border-b border-ink-100 dark:border-ink-800 flex flex-wrap items-center gap-2.5">
+      <h3 class="font-bold text-[14.5px] mr-auto">${title}</h3>
+      <div class="flex items-center gap-2 rounded-xl border border-ink-200 dark:border-ink-700 bg-ink-50 dark:bg-ink-900 px-3 py-1.5">${ic('search','w-3.5 h-3.5 text-ink-400')}
+        <input placeholder="Search…" value="${esc(ui.q)}" oninput="ui.q=this.value;ui.page=1;route()" class="bg-transparent text-[12.5px] w-32 focus:outline-none"/></div>
+      <select onchange="ui.deviceFilter=this.value;ui.page=1;route()" class="input !w-auto !py-1.5 !text-[12px]"><option value="">All devices</option>${['desktop','mobile','tablet','bot'].map(d=>`<option ${ui.deviceFilter===d?'selected':''}>${d}</option>`).join('')}</select>
+      <select onchange="ui.typeFilter=this.value;ui.page=1;route()" class="input !w-auto !py-1.5 !text-[12px]"><option value="">All types</option>${['visit','pixel_load'].map(d=>`<option ${ui.typeFilter===d?'selected':''} value="${d}">${d.replace('_',' ')}</option>`).join('')}</select>
+      <button onclick="Actions.exportFiltered()" class="btn-ghost px-3 py-1.5 text-[12px]">${ic('dl','w-3.5 h-3.5')}CSV</button></div>
+    <div class="overflow-x-auto"><table class="w-full min-w-[980px]"><thead><tr class="border-b border-ink-100 dark:border-ink-800 bg-ink-50/60 dark:bg-ink-900/60">
+      <th class="th">Timestamp</th><th class="th">IP (masked)</th><th class="th">Approx. location</th><th class="th">Device</th><th class="th">Browser</th><th class="th">OS</th><th class="th">Referrer</th><th class="th">Lang</th><th class="th">Consent</th><th class="th">Type</th></tr></thead>
+    <tbody>${page.map(e=>`<tr class="border-b border-ink-50 dark:border-ink-800/60 hover:bg-ink-50/60 dark:hover:bg-ink-800/30 transition">
+      <td class="td text-ink-500">${fdate(e.occurredAt)}</td>
+      <td class="td mono text-ink-500" title="Full IPs are redacted by default">${esc(e.ipMasked)}</td>
+      <td class="td">${esc(e.city)}, ${esc(e.countryCode)}</td>
+      <td class="td"><span class="inline-flex items-center gap-1.5">${ic(devIc(e.deviceType),'w-3.5 h-3.5 text-ink-400')}${e.deviceType}</span></td>
+      <td class="td">${esc(e.browser)}</td><td class="td text-ink-400">${esc(e.operatingSystem)}</td>
+      <td class="td text-ink-400 max-w-40 truncate">${e.referrer?esc(new URL(e.referrer).hostname):'<span class="text-ink-300 dark:text-ink-600">direct</span>'}</td>
+      <td class="td text-ink-400">${esc(e.language)}</td>
+      <td class="td"><span class="text-ink-300 dark:text-ink-600">n/a</span></td>
+      <td class="td"><span class="badge ${e.eventType==='pixel_load'?'bg-violet-50 dark:bg-violet-500/10 text-violet-600':'bg-brand-50 dark:bg-brand-500/10 text-brand-600'}">${e.eventType.replace('_',' ')}</span>${e.proxyIndicators?`<span class="badge bg-amber-50 dark:bg-amber-500/10 text-amber-600 ml-1" title="Forwarded-header indicator · low confidence · not proof of VPN/proxy">proxy?</span>`:''}</td></tr>`).join('')||'<tr><td colspan="10" class="td text-center py-10 text-ink-400">No events match your filters.</td></tr>'}</tbody></table></div>
+    <div class="px-5 py-3.5 flex items-center justify-between flex-wrap gap-2 text-[12.5px] text-ink-400">
+      <span>${fmt(rows.length)} events · page ${ui.page} of ${pages}</span>
+      <div class="flex gap-1.5"><button ${ui.page<=1?'disabled':''} onclick="ui.page--;route()" class="btn-ghost px-3 py-1.5 text-[12px]">← Prev</button>
+      <button ${ui.page>=pages?'disabled':''} onclick="ui.page++;route()" class="btn-ghost px-3 py-1.5 text-[12px]">Next →</button></div></div></div>`;
+}
+
+/* -------- charts -------- */
+function chartColors(){const dark=document.documentElement.classList.contains('dark');return{grid:dark?'rgba(148,163,184,.1)':'rgba(15,23,42,.06)',tick:dark?'#64748b':'#94a3b8'}}
+function buildTimeline(id,evs,prev=null){
+  const el=document.getElementById(id);if(!el||typeof Chart==='undefined')return;
+  const cc=chartColors();const days=ui.range;const labels=[],req=[],unq=[],prevA=[];
+  for(let i=days-1;i>=0;i--){const d=new Date(Date.now()-i*day);const key=d.toDateString();
+    labels.push(d.toLocaleDateString(undefined,{month:'short',day:'numeric'}));
+    const dayEvs=evs.filter(e=>new Date(e.occurredAt).toDateString()===key);
+    req.push(dayEvs.length);unq.push(new Set(dayEvs.map(e=>e.visitorToken)).size);
+    if(prev)prevA.push(prev.filter(e=>new Date(e.occurredAt).toDateString()===new Date(Date.now()-(i+days)*day).toDateString()).length);}
+  const ds=[{label:'Requests',data:req,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.12)',fill:true,tension:.35,pointRadius:0,borderWidth:2},
+    {label:'Est. unique',data:unq,borderColor:'#8b5cf6',borderDash:[5,4],tension:.35,pointRadius:0,borderWidth:1.8,fill:false}];
+  if(prev)ds.push({label:'Previous period',data:prevA,borderColor:'#cbd5e1',borderDash:[3,4],tension:.35,pointRadius:0,borderWidth:1.5,fill:false});
+  charts.push(new Chart(el,{type:'line',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{color:cc.tick,boxWidth:10,font:{size:11}}}},
+    scales:{x:{grid:{color:cc.grid},ticks:{color:cc.tick,maxTicksLimit:8,font:{size:10.5}}},y:{grid:{color:cc.grid},ticks:{color:cc.tick,font:{size:10.5}},beginAtZero:true}}}}));
+}
+function buildDoughnut(id,evs){
+  const el=document.getElementById(id);if(!el||typeof Chart==='undefined')return;
+  const rows=agg(evs,'deviceType');const cc=chartColors();
+  charts.push(new Chart(el,{type:'doughnut',data:{labels:rows.map(r=>r[0]),datasets:[{data:rows.map(r=>r[1]),backgroundColor:['#6366f1','#8b5cf6','#34d399','#f59e0b'],borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{color:cc.tick,boxWidth:9,font:{size:11}}}}}}));
+}
+function buildMap(l,evs,geoEvs){
+  const el=document.getElementById('map');if(!el||typeof L==='undefined')return;
+  leafletMap=L.map(el,{zoomControl:true,attributionControl:true}).setView([20,10],2);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:10,attribution:'© OpenStreetMap'}).addTo(leafletMap);
+  const byCity=agg(evs.filter(e=>e.lat!=null),e=>[e.city,e.lat.toFixed(2),e.lng.toFixed(2),e.countryCode].join('|'));
+  byCity.forEach(([k,v])=>{const[city,lat,lng,cc]=k.split('|');
+    L.circleMarker([+lat,+lng],{radius:Math.min(26,6+Math.sqrt(v)*2.4),color:'#6366f1',weight:1.5,fillColor:'#6366f1',fillOpacity:.28})
+     .addTo(leafletMap).bindPopup(`<b>${esc(city)}, ${esc(cc)}</b><br>${fmt(v)} requests<br><i>Approximate · IP-based</i>`)});
+  geoEvs.forEach(g=>{L.marker([g.latitude,g.longitude],{icon:L.divIcon({className:'',html:'<div style="width:12px;height:12px;background:#f43f5e;transform:rotate(45deg);border:2px solid #fff;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>',iconSize:[12,12]})})
+    .addTo(leafletMap).bindPopup(`<b>Precise GPS (consent-granted)</b><br>±${g.accuracyMeters}m · ${fdate(g.capturedAt)}`)});
+  if(byCity.length){const b=L.latLngBounds(byCity.map(([k])=>{const p=k.split('|');return[+p[1],+p[2]]}));leafletMap.fitBounds(b.pad(.25))}
+  setTimeout(()=>leafletMap&&leafletMap.invalidateSize(),120);
+}
+
+/* ================================================================
+   VISITOR LOGS / REPORTS / ADMIN / SETTINGS
+================================================================ */
+function vLogs(){
+  const links=myLinks();const evs=db.events.filter(e=>links.some(l=>l.id===e.linkId));
+  const content=`${pageHead('Visitor Logs','Every recorded event across your tracking resources. IPs are masked by default; sensitive fields reveal only to authorized owners.')}`;
+  shell('logs',content+eventsTable(evs,'All visitor events'));
+}
+function vReports(){
+  const mine=db.reports.filter(r=>{const l=db.links.find(x=>x.id===r.trackingLinkId);return l&&(l.ownerId===me().id)});
+  const content=`${pageHead('Reports','Suspicious-destination reports affecting your links. Admins review every report manually — no destination is auto-labeled malicious from one signal.')}
+  ${mine.length?`<div class="space-y-3">${mine.map(reportCard).join('')}</div>`
+  :emptyState('flag','No reports','Reports submitted against your tracking links will appear here for transparency.')}`;
+  shell('reports',content);
+}
+const reportCard=r=>{const l=db.links.find(x=>x.id===r.trackingLinkId);
+  return`<div class="card p-5"><div class="flex items-start justify-between gap-3 flex-wrap">
+  <div><div class="flex items-center gap-2 flex-wrap"><b class="text-[14px] capitalize">${esc(r.reason)}</b>
+  <span class="badge ${r.status==='pending'?'bg-amber-50 dark:bg-amber-500/10 text-amber-600':r.status==='actioned'?'bg-rose-50 dark:bg-rose-500/10 text-rose-600':'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600'}">${r.status}</span></div>
+  <div class="text-[12.5px] text-ink-500 mt-1.5">${esc(r.description)}</div>
+  <div class="text-[11.5px] text-ink-400 mt-2">Link: ${esc(l?.title||l?.slug||'deleted')} · ${esc(l?.destinationUrl||'')} · ${timeAgo(r.createdAt)}</div></div></div></div>`};
+function vAdmin(){
+  if(!isAdmin()){shell('admin',emptyState('lock','Access denied','This area requires an administrator role.'));return}
+  const reps=db.reports.slice().sort((a,b)=>b.createdAt-a.createdAt);
+  const content=`${pageHead('Admin Moderation','Review reports, inspect risk indicators, and disable, restore or permanently remove links. All actions are audit-logged.')}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
+    ${statCard('flag','Pending',db.reports.filter(r=>r.status==='pending').length,'awaiting review','amber')}
+    ${statCard('ban','Disabled links',db.links.filter(l=>l.status==='disabled').length,'by moderation','rose')}
+    ${statCard('link','Total links',db.links.length,'platform-wide')}
+    ${statCard('users','Users',db.users.length,'registered','violet')}</div>
+  ${reps.length?`<div class="space-y-3">${reps.map(r=>{const l=db.links.find(x=>x.id===r.trackingLinkId);const owner=l&&db.users.find(u=>u.id===l.ownerId);
+    return`<div class="card p-5"><div class="flex items-start justify-between gap-3 flex-wrap">
+      <div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><b class="capitalize text-[14px]">${esc(r.reason)}</b>
+        <span class="badge ${r.status==='pending'?'bg-amber-50 dark:bg-amber-500/10 text-amber-600':r.status==='actioned'?'bg-rose-50 dark:bg-rose-500/10 text-rose-600':'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600'}">${r.status}</span></div>
+        <p class="text-[13px] text-ink-600 dark:text-ink-300 mt-1.5">${esc(r.description)}</p>
+        <div class="text-[11.5px] text-ink-400 mt-2 space-y-0.5">
+          <div>Destination: <span class="mono">${esc(l?.destinationUrl||'removed')}</span></div>
+          <div>Link owner: ${esc(owner?.email||'unknown')} · Reporter: anonymous · ${timeAgo(r.createdAt)}</div>
+          <div>Risk indicators: ${l&&evCount(l.id)>300?'high traffic volume; ':''}manual review required · no auto-labeling</div></div></div>
+      ${r.status==='pending'&&l?`<div class="flex gap-2 shrink-0 flex-wrap">
+        <button onclick="Actions.moderate('${r.id}','disable')" class="btn-danger px-3.5 py-2 text-[12px]">${ic('ban','w-3.5 h-3.5')}Disable link</button>
+        <button onclick="Actions.moderate('${r.id}','dismiss')" class="btn-ghost px-3.5 py-2 text-[12px]">${ic('check','w-3.5 h-3.5')}Dismiss</button>
+        <button onclick="Actions.moderate('${r.id}','remove')" class="btn-ghost px-3.5 py-2 text-[12px] text-rose-500">${ic('trash','w-3.5 h-3.5')}Remove</button></div>`
+      :l&&l.status==='disabled'?`<button onclick="Actions.toggleLink('${l.id}')" class="btn-ghost px-3.5 py-2 text-[12px] text-emerald-600 shrink-0">Restore link</button>`:''}</div></div>`}).join('')}</div>`
+  :emptyState('inbox','Queue is clear','No reports to review right now.')}`;
+  shell('admin',content);
+}
+function vSettings(){
+  const u=me();
+  const content=`${pageHead('Settings','Account, privacy and data controls.')}
+  <div class="grid lg:grid-cols-2 gap-5">
+    <div class="card p-6"><h3 class="font-bold text-[15px] mb-4">Profile</h3>
+      <form onsubmit="Actions.saveProfile(event)"><label class="label">Display name</label><input name="name" class="input mb-3.5" value="${esc(u.displayName)}"/>
+      <label class="label">Email</label><input class="input mb-4" value="${esc(u.email)}" disabled/>
+      <label class="label">Default analytics retention</label><select name="retention" class="input mb-4">${[7,30,90,180,365].map(d=>`<option value="${d}" ${u.settings.retentionDays===d?'selected':''}>${d} days</option>`).join('')}</select>
+      <button class="btn-primary px-4 py-2 text-[13px]">Save changes</button></form></div>
+    <div class="card p-6"><h3 class="font-bold text-[15px] mb-1">Privacy & data</h3>
+      <p class="text-[12.5px] text-ink-400 mb-4">What this platform collects, why, and how long — plus export and deletion.</p>
+      <div class="space-y-3 text-[12.5px]">
+        ${[['eye','Collected','IP (masked in dashboards), approximate IP geolocation, UA-derived device/browser/OS, referrer, language, UTM, consent state.'],
+          ['pin','Precise GPS','Only via explicit, purpose-disclosed browser permission. Stored separately with consent records. Never silent.'],
+          ['clock','Retention','Events auto-delete after each link\u2019s retention period. GPS retention is configured per geolocation link.'],
+          ['shield','Access','Row-level ownership. Tracking codes hashed. Optional browser signals (screen, timezone) off by default.'],
+          ['globe','Jurisdictions','Designed with Malaysia\u2019s PDPA in mind; assess other regimes per deployment. Not legal advice.']]
+          .map(([i,t,d])=>`<div class="flex gap-3"><span class="text-brand-500 mt-0.5">${ic(i,'w-4 h-4')}</span><div><b>${t}.</b> <span class="text-ink-500 dark:text-ink-400">${d}</span></div></div>`).join('')}</div>
+      <div class="flex gap-2 mt-5 pt-5 border-t border-ink-100 dark:border-ink-800 flex-wrap">
+        <button onclick="Actions.exportAll()" class="btn-ghost px-3.5 py-2 text-[12.5px]">${ic('dl','w-4 h-4')}Export my data (JSON)</button>
+        <button onclick="Actions.purgeEvents()" class="btn-ghost px-3.5 py-2 text-[12.5px] text-amber-600">${ic('refresh','w-4 h-3.5 h-4')}Delete my event data</button>
+        <button onclick="Actions.deleteAccount()" class="btn-danger px-3.5 py-2 text-[12.5px]">${ic('trash','w-4 h-4')}Delete account</button></div></div>
+</div>`;
+  shell('settings',content);
+}
+
+/* ================================================================
+   PUBLIC FLOWS — redirect, pixel, geo consent, report
+================================================================ */
+function pubShell(inner){
+  return`<div class="min-h-screen flex items-center justify-center px-5 hero-grid bg-white dark:bg-ink-950 py-10"><div class="w-full max-w-md fadein">
+    <div class="flex items-center justify-center gap-2 mb-6">${logo(30)}<span class="font-extrabold tracking-tight">IP Tracker</span></div>${inner}
+    <p class="text-center text-[11.5px] text-ink-400 mt-6">Analytics on this link are collected transparently · <a class="underline hover:text-brand-500" href="#/">About IP Tracker</a></p></div></div>`;
+}
+async function vRedirect(slug){LOADING();const l=await pubLink({action:'visit',slug,linkType:'short_url',ref:document.referrer,utm:utmParams()});
+  if(!l||l.status==='removed')return mount(pubShell(`<div class="card p-8 text-center"><div class="stat-ic bg-ink-100 dark:bg-ink-800 text-ink-400 mx-auto mb-4">${ic('x','w-5 h-5')}</div><h1 class="font-extrabold text-lg">Link not found</h1><p class="text-[13px] text-ink-400 mt-2">This tracking link does not exist or has been permanently removed.</p></div>`));
+  const expired=l.expiresAt&&l.expiresAt<Date.now();
+  if(l.status==='disabled'||expired)return mount(pubShell(`<div class="card p-8 text-center"><div class="stat-ic bg-amber-50 dark:bg-amber-500/10 text-amber-500 mx-auto mb-4">${ic('clock','w-5 h-5')}</div>
+    <h1 class="font-extrabold text-lg">${expired?'Link expired':'Link disabled'}</h1><p class="text-[13px] text-ink-400 mt-2">${expired?'This short link has passed its expiration date.':'This link was disabled by its owner or a moderator.'} No redirect was performed and no analytics were recorded.</p></div>`));
+  const dom=new URL(l.destinationUrl).hostname;
+  return mount(pubShell(`<div class="card p-8 text-center">
+    <div class="stat-ic bg-brand-50 dark:bg-brand-500/10 text-brand-500 mx-auto mb-4 !w-12 !h-12">${ic('zap','w-6 h-6')}</div>
+    <h1 class="font-extrabold text-lg">Redirecting you now</h1>
+    <p class="text-[13px] text-ink-500 mt-2">You're on your way to <b class="mono">${esc(dom)}</b>. Basic visit analytics (approximate region, device, referrer) were recorded and disclosed.</p>
+    <div class="mt-5 h-1.5 rounded-full bg-ink-100 dark:bg-ink-800 overflow-hidden"><div id="rbar" class="h-full bg-brand-500 rounded-full" style="width:0%;transition:width 2.6s linear"></div></div>
+    <div class="flex items-center justify-center gap-3 mt-6">
+      <a href="${esc(l.destinationUrl)}" class="btn-primary px-5 py-2.5 text-[13.5px]">Continue now ${ic('chev','w-4 h-4')}</a>
+      <a href="#/report/${l.id}" class="btn-ghost px-4 py-2.5 text-[12.5px] text-amber-600">${ic('flag','w-4 h-4')}Report suspicious link</a></div></div>`),
+  ()=>{requestAnimationFrame(()=>{const b=$('#rbar');if(b)b.style.width='100%'});setTimeout(()=>{location.href=l.destinationUrl},2900)});
+}
+async function vGeoConsent(slug){LOADING();const l=await pubLink({action:'visit',slug,linkType:'geolocation',ref:document.referrer,utm:utmParams()});
+  if(!l||l.status!=='active'||(l.expiresAt&&l.expiresAt<Date.now()))return mount(pubShell(`<div class="card p-8 text-center"><h1 class="font-extrabold text-lg">Link unavailable</h1><p class="text-[13px] text-ink-400 mt-2">This geolocation link is expired, disabled or removed.</p></div>`));
+  const owner={displayName:l.ownerName};
+  return mount(pubShell(`<div class="card p-7">
+    <div class="stat-ic bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 mb-4 !w-11 !h-11">${ic('pin','w-5 h-5')}</div>
+    <h1 class="font-extrabold text-[17px]">Location permission request</h1>
+    <p class="text-[12.5px] text-ink-400 mt-1">Published by <b class="text-ink-600 dark:text-ink-300">${esc(owner?.displayName||'a publisher')}</b> via IP Tracker · Disclosure v1.2</p>
+    <div class="rounded-xl bg-ink-50 dark:bg-ink-800/60 border border-ink-200 dark:border-ink-700 p-4 mt-4 text-[13px] space-y-2.5">
+      <div><b>Purpose.</b> <span class="text-ink-600 dark:text-ink-300">${esc(l.purpose||'Not specified.')}</span></div>
+      <div><b>What is collected.</b> <span class="text-ink-600 dark:text-ink-300">Latitude, longitude, accuracy and a timestamp — only if you explicitly allow it.</span></div>
+      <div><b>Retention.</b> <span class="text-ink-600 dark:text-ink-300">Precise coordinates are kept for ${l.retentionDays} day${l.retentionDays>1?'s':''}, then deleted.</span></div>
+      <div><b>Your choice.</b> <span class="text-ink-600 dark:text-ink-300">You can continue without sharing. We never collect GPS silently and won't re-prompt if you decline.</span></div></div>
+    <div id="geoStatus" class="hidden mt-4 rounded-xl px-4 py-3 text-[12.5px]"></div>
+    <div class="flex flex-col gap-2.5 mt-5">
+      <button id="shareBtn" onclick="Actions.shareLocation('${l.id}')" class="btn-primary w-full py-3 text-[14px]">${ic('pin','w-4 h-4')}Share My Location</button>
+      <button onclick="Actions.skipLocation('${l.id}')" class="btn-ghost w-full py-3 text-[13.5px]">Continue without sharing location</button></div>
+    <a href="#/report/${l.id}" class="block text-center text-[12px] font-medium text-amber-600 hover:underline mt-4">${'Report this link'}</a></div>`));
+}
+async function vReport(id){LOADING();const l=await pubLink({action:'link_info',id});
+  if(!l)return mount(pubShell(`<div class="card p-8 text-center"><h1 class="font-extrabold text-lg">Link not found</h1></div>`));
+  return mount(pubShell(`<div class="card p-7">
+    <div class="stat-ic bg-amber-50 dark:bg-amber-500/10 text-amber-500 mb-4">${ic('flag','w-5 h-5')}</div>
+    <h1 class="font-extrabold text-[17px]">Report suspicious link</h1>
+    <p class="text-[12.5px] text-ink-400 mt-1.5 mb-5">Reports are reviewed manually by moderators. Destinations are never auto-labeled malicious from a single signal. Rate-limited & spam-protected.</p>
+    <div class="rounded-xl bg-ink-50 dark:bg-ink-800/60 border border-ink-200 dark:border-ink-700 px-4 py-3 text-[12.5px] mono text-ink-500 mb-4 truncate">${esc(l.destinationUrl)}</div>
+    <form onsubmit="Actions.submitReport(event,'${l.id}')">
+      <label class="label">Reason *</label><select name="reason" class="input mb-3.5" required>
+        ${['phishing','malware','spam','impersonation','harassment','other suspicious activity'].map(r=>`<option>${r}</option>`).join('')}</select>
+      <label class="label">Description *</label><textarea name="description" class="input mb-4" rows="3" required minlength="10" placeholder="What happened? Where did you encounter this link?"></textarea>
+      <button class="btn-primary w-full py-2.5 text-[13.5px]">Submit report</button></form></div>`));
+}
+
+/* ================================================================
+   ACTIONS
+================================================================ */
+window.Actions={
+  async login(e){e.preventDefault();const f=e.target;const r=await login(f.email.value,f.password.value);
+    if(!r.ok)return toast(r.error,'err');toast('Welcome back, '+r.user.displayName);location.hash='#/app/overview';route()},
+  async register(e){e.preventDefault();const f=e.target;const r=await register(f.name.value,f.email.value,f.password.value);
+    if(!r.ok)return toast(r.error,'err');toast('Account created — welcome!');location.hash='#/app/overview';route()},
+  async createLink(e,type){
+    e.preventDefault();const f=e.target;const u=me();
+    let dest=null;
+    if(type!=='pixel'){const v=validateDestination(f.dest.value.trim());if(!v.ok)return toast(v.error,'err');dest=v.url}
+    let slug=f.slug?.value?.trim()||slugGen();
+    if(!/^[a-zA-Z0-9_-]{3,32}$/.test(slug))return toast('Slug must be 3–32 chars: letters, numbers, - or _.','err');
+    if(['r','p','g','app','api','report','login','register','admin'].includes(slug.toLowerCase()))return toast('That slug is a reserved path.','err');
+    if(db.links.some(l=>l.slug===slug))return toast('Slug already in use. Choose another.','err');
+    const linksMine=myLinks();if(linksMine.length>=50)return toast('Link creation limit reached (50) — rate limit.','err');
+    const code=trackCode();
+    const link={id:crypto.randomUUID(),ownerId:u.id,slug,trackingCode:code,trackingCodeHash:null,destinationUrl:dest||'pixel:',
+      title:f.title?.value?.trim()||null,purpose:f.purpose?.value?.trim()||null,linkType:type,status:'active',
+      expiresAt:f.expires?.value?new Date(f.expires.value).getTime():null,
+      retentionDays:+(f.retention?.value||u.settings.retentionDays),createdAt:Date.now(),updatedAt:Date.now()};
+    link.trackingCodeHash=await sha256(code);const{trackingCode:_tc,...row}=link;
+    const{error}=await sb.from('tracking_links').insert(snake(row));
+    if(error)return toast(error.code==='23505'?'Slug already in use. Choose another.':error.message,'err');
+    db.links.unshift(link);
+    toast('Tracking link created');ui.q='';route();
+    setTimeout(()=>{const c=link.trackingCode;modal(`<div class="text-center">
+      <div class="stat-ic bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 mx-auto mb-3">${ic('check','w-5 h-5')}</div>
+      <h3 class="font-extrabold text-[16px] mb-1">Link created</h3>
+      <p class="text-[12.5px] text-ink-400 mb-4">Save your tracking code — it's stored hashed and shown here once.</p>
+      <div class="rounded-xl bg-ink-50 dark:bg-ink-950 border border-ink-200 dark:border-ink-800 p-3 mono text-[13px] font-bold text-brand-600 dark:text-brand-400 mb-2">${c}</div>
+      <button onclick="copyText('${c}','Tracking code copied')" class="btn-ghost w-full py-2 text-[12.5px] mb-2">${ic('copy','w-4 h-4')}Copy tracking code</button>
+      <button onclick="closeModal();Actions.openAnalytics('${link.id}')" class="btn-primary w-full py-2.5 text-[13px]">View Analytics</button></div>`)},350);
+  },
+  toggleLink(id){const l=db.links.find(x=>x.id===id);if(!l)return;
+    if(l.ownerId!==me().id&&!isAdmin())return toast('Not authorized.','err');
+    l.status=l.status==='active'?'disabled':'active';l.updatedAt=Date.now();
+    db.audit.push({id:uid(12),actorId:me().id,action:'link.'+l.status,resourceType:'tracking_link',resourceId:id,createdAt:Date.now()});save();toast('Link '+l.status);route()},
+  deleteLink(id){const l=db.links.find(x=>x.id===id);if(!l)return;
+    modal(`<h3 class="font-extrabold text-[16px] mb-2">Delete this link?</h3><p class="text-[13px] text-ink-500 mb-5">The link and all its events will be permanently removed. This respects retention/deletion policy and cannot be undone.</p>
+    <div class="flex gap-2"><button onclick="closeModal()" class="btn-ghost flex-1 py-2.5 text-[13px]">Cancel</button>
+    <button onclick="Actions.confirmDelete('${id}')" class="btn-danger flex-1 py-2.5 text-[13px]">Delete permanently</button></div>`)},
+  confirmDelete(id){db.links=db.links.filter(l=>l.id!==id);db.events=db.events.filter(e=>e.linkId!==id);
+    db.geoEvents=db.geoEvents.filter(g=>g.trackingLinkId!==id);db.consents=db.consents.filter(c=>c.trackingLinkId!==id);
+    db.audit.push({id:uid(12),actorId:me().id,action:'link.delete',resourceType:'tracking_link',resourceId:id,createdAt:Date.now()});save();closeModal();toast('Link deleted');route()},
+  qr(id){const l=db.links.find(x=>x.id===id);const url=l.linkType==='geolocation'?geoURL(l):shortURL(l);
+    modal(`<div class="text-center"><h3 class="font-extrabold text-[16px] mb-4">QR code</h3><div id="qrbox" class="flex justify-center mb-4"></div>
+    <div class="mono text-[11.5px] text-ink-400 break-all mb-4">${esc(url)}</div>
+    <button onclick="closeModal()" class="btn-ghost w-full py-2.5 text-[13px]">Close</button></div>`);
+    if(typeof QRCode!=='undefined')new QRCode($('#qrbox'),{text:url,width:180,height:180,colorDark:document.documentElement.classList.contains('dark')?'#e2e8f0':'#0f172a'});
+    else $('#qrbox').innerHTML='<p class="text-[12px] text-ink-400">QR library unavailable offline.</p>'},
+  async codeAccess(e){e.preventDefault();const code=e.target.code.value.trim().toUpperCase();
+    // rate limit enumeration attempts
+    const k='ipt_code_attempts';const a=JSON.parse(sessionStorage.getItem(k)||'{"n":0,"t":0}');
+    if(Date.now()-a.t>6e4){a.n=0;a.t=Date.now()}a.n++;sessionStorage.setItem(k,JSON.stringify(a));
+    if(a.n>5)return toast('Too many attempts. Try again in a minute. (rate limit)','err');
+    const h=await sha256(code);const l=db.links.find(x=>x.trackingCodeHash===h);
+    if(!l)return toast('Invalid or unauthorized tracking code.','err'); // generic error — no enumeration signal
+    if(l.ownerId!==me().id&&!isAdmin())return toast('Invalid or unauthorized tracking code.','err');
+    this.openAnalytics(l.id)},
+  openAnalytics(id){const l=db.links.find(x=>x.id===id);if(!l)return toast('Link not found.','err');
+    if(l.ownerId!==me()?.id&&!isAdmin())return toast('Access denied.','err');
+    ui.analyticsLink=id;ui.tab='overview';ui.page=1;ui.q='';ui.deviceFilter=ui.typeFilter='';location.hash='#/app/analytics/'+id;route()},
+  exportEvents(id){const l=db.links.find(x=>x.id===id);if(!l||(l.ownerId!==me().id&&!isAdmin()))return toast('Export not authorized.','err');
+    const evs=db.events.filter(e=>e.linkId===id);
+    download(`events-${l.slug}.csv`,toCSV(evs,[['timestamp',e=>new Date(e.occurredAt).toISOString()],['ip_masked','ipMasked'],['country','country'],['region','region'],['city','city'],['device','deviceType'],['browser','browser'],['os','operatingSystem'],['referrer','referrer'],['language','language'],['utm_source','utm_source'],['utm_medium','utm_medium'],['utm_campaign','utm_campaign'],['type','eventType']]),'text/csv');
+    db.audit.push({id:uid(12),actorId:me().id,action:'analytics.export',resourceType:'tracking_link',resourceId:id,createdAt:Date.now()});save();toast('CSV exported (IPs masked)')},
+  exportFiltered(){toast('Use the per-link export for authorized CSV downloads.','warn')},
+  shareLocation(id){const l=PL[id];const st=$('#geoStatus');const btn=$('#shareBtn');
+    const show=(msg,kind)=>{st.className=`mt-4 rounded-xl px-4 py-3 text-[12.5px] ${kind==='err'?'bg-rose-50 dark:bg-rose-500/10 text-rose-600':'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600'}`;st.textContent=msg};
+    if(!('geolocation' in navigator)){show('Your browser does not support geolocation. You can continue without sharing.','err');return}
+    btn.disabled=true;btn.innerHTML='Requesting permission…';
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const r=await pub({action:'geo',linkId:id,latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:Math.round(pos.coords.accuracy||0)});
+      if(r.error){btn.disabled=false;btn.innerHTML='Share My Location';return show(r.error,'err')}
+      show(`Thank you — location shared (±${Math.round(pos.coords.accuracy||0)}m). Redirecting…`);
+      setTimeout(()=>location.href=l.destinationUrl,1600);
+    },err=>{btn.disabled=false;btn.innerHTML='Share My Location';
+      const m={1:'Permission denied. No location was collected — and we won\u2019t ask again this session. You can continue below.',2:'Location unavailable. No data collected.',3:'The request timed out. No data collected.'}[err.code]||'Could not get location. No data collected.';
+      show(m,'err');sessionStorage.setItem('ipt_geo_declined_'+id,'1')},
+    {enableHighAccuracy:true,timeout:10000,maximumAge:0})},
+  skipLocation(id){const l=PL[id];toast('Continuing without location');setTimeout(()=>location.href=l.destinationUrl,600)},
+  async submitReport(e,linkId){e.preventDefault();const f=e.target;
+    const r=await pub({action:'report',linkId,reason:f.reason.value,description:f.description.value.trim()});if(r.error)return toast(r.error,'err');toast('Report submitted for manual review');
+    mount(pubShell(`<div class="card p-8 text-center"><div class="stat-ic bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 mx-auto mb-4">${ic('check','w-5 h-5')}</div>
+      <h1 class="font-extrabold text-lg">Report received</h1><p class="text-[13px] text-ink-400 mt-2">A moderator will review this destination. Thank you for helping keep links safe.</p>
+      <a href="#/" class="btn-ghost px-5 py-2.5 text-[13px] mt-5">Back to IP Tracker</a></div>`))},
+  moderate(reportId,action){if(!isAdmin())return toast('Admins only.','err');
+    const r=db.reports.find(x=>x.id===reportId);const l=db.links.find(x=>x.id===r.trackingLinkId);if(!r)return;
+    r.status=action==='dismiss'?'dismissed':'actioned';r.reviewedBy=me().id;r.reviewedAt=Date.now();
+    if(l&&action==='disable')l.status='disabled';if(l&&action==='remove')l.status='removed';
+    db.audit.push({id:uid(12),actorId:me().id,action:'moderation.'+action,resourceType:'tracking_report',resourceId:reportId,createdAt:Date.now()});save();
+    toast('Report '+r.status+(l&&action!=='dismiss'?' · link '+l.status:''));route()},
+  saveProfile(e){e.preventDefault();const u=me();u.displayName=e.target.name.value.trim()||u.displayName;u.settings.retentionDays=+e.target.retention.value;save();toast('Profile saved');route()},
+  exportAll(){const u=me();const data={profile:{displayName:u.displayName,email:u.email,role:u.role,createdAt:u.createdAt},
+    links:myLinks(),events:db.events.filter(e=>myLinks().some(l=>l.id===e.linkId)),geoEvents:db.geoEvents.filter(g=>myLinks().some(l=>l.id===g.trackingLinkId))};
+    download('ip-tracker-export.json',JSON.stringify(data,null,2),'application/json');toast('Your data was exported')},
+  purgeEvents(){modal(`<h3 class="font-extrabold text-[16px] mb-2">Delete all your event data?</h3><p class="text-[13px] text-ink-500 mb-5">All analytics events and GPS records for your links will be permanently erased. Links themselves remain.</p>
+    <div class="flex gap-2"><button onclick="closeModal()" class="btn-ghost flex-1 py-2.5 text-[13px]">Cancel</button>
+    <button onclick="Actions.confirmPurge()" class="btn-danger flex-1 py-2.5 text-[13px]">Erase events</button></div>`)},
+  confirmPurge(){const ids=myLinks().map(l=>l.id);db.events=db.events.filter(e=>!ids.includes(e.linkId));db.geoEvents=db.geoEvents.filter(g=>!ids.includes(g.trackingLinkId));db.consents=db.consents.filter(c=>!ids.includes(c.trackingLinkId));save();closeModal();toast('Event data erased');route()},
+  deleteAccount(){modal(`<h3 class="font-extrabold text-[16px] mb-2">Delete your account?</h3><p class="text-[13px] text-ink-500 mb-5">Your profile, links, events and consents will be permanently deleted.</p>
+    <div class="flex gap-2"><button onclick="closeModal()" class="btn-ghost flex-1 py-2.5 text-[13px]">Cancel</button>
+    <button onclick="Actions.confirmDelAcct()" class="btn-danger flex-1 py-2.5 text-[13px]">Delete account</button></div>`)},
+  confirmDelAcct(){const u=me();const ids=myLinks().map(l=>l.id);
+    db.events=db.events.filter(e=>!ids.includes(e.linkId));db.geoEvents=db.geoEvents.filter(g=>!ids.includes(g.trackingLinkId));
+    db.consents=db.consents.filter(c=>!ids.includes(c.trackingLinkId));db.links=db.links.filter(l=>l.ownerId!==u.id);
+    db.users=db.users.filter(x=>x.id!==u.id);save();logout();closeModal();toast('Account deleted')},
+};
+
+/* -------- modal -------- */
+function modal(html){$('#modal-root').innerHTML=`<div class="fixed inset-0 z-[9998] flex items-center justify-center p-5">
+  <div class="absolute inset-0 bg-ink-950/55 backdrop-blur-sm" onclick="closeModal()"></div>
+  <div class="relative card p-6 w-full max-w-sm fadein">${html}</div></div>`}
+window.closeModal=()=>{$('#modal-root').innerHTML=''};
+
+/* ================================================================
+   ROUTER
+================================================================ */
+function route(){
+  ui.mobileNav=false;ui.notif=false;ui.profileMenu=false;
+  const hash=location.hash||'#/';const seg=hash.slice(1).split('/').filter(Boolean);
+  document.title='IP Tracker — Track Visits. Understand Traffic. Respect Privacy.';
+  if(seg[0]==='r'&&seg[1])return vRedirect(seg[1]);
+  if(seg[0]==='g'&&seg[1])return vGeoConsent(seg[1]);
+  if(seg[0]==='report'&&seg[1])return vReport(seg[1]);
+  if(seg[0]==='login')return mount(vLogin());
+  if(seg[0]==='register')return mount(vRegister());
+  if(seg[0]==='app'){
+    if(!me()){location.hash='#/login';return}
+    const sub=seg[1]||'overview';
+    if(sub==='overview')return vOverview();
+    if(sub==='urls')return vURLs();
+    if(sub==='pixels')return vPixels();
+    if(sub==='geo')return vGeo();
+    if(sub==='analytics'&&seg[2]){const l=db.links.find(x=>x.id===seg[2]);
+      if(!l||(l.ownerId!==me().id&&!isAdmin()))return vAnalyticsAccess();return vAnalyticsDash(l)}
+    if(sub==='analytics')return vAnalyticsAccess();
+    if(sub==='logs')return vLogs();
+    if(sub==='reports')return vReports();
+    if(sub==='admin')return vAdmin();
+    if(sub==='settings')return vSettings();
+    return vOverview();
+  }
+  mount(vLanding());
+}
+window.addEventListener('hashchange',route);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+Object.assign(Actions,{
+  async register(e){e.preventDefault();const f=e.target;const r=await register(f.name.value,f.email.value,f.password.value);
+    if(!r.ok)return toast(r.error,'err');
+    if(r.confirm){toast('Check your email to confirm your account, then sign in.');location.hash='#/login';return}
+    toast('Account created — welcome!');location.hash='#/app/overview';route()},
+  async forgot(email){if(!email)return toast('Enter your email first.','warn');
+    const{error}=await sb.auth.resetPasswordForEmail(email.trim(),{redirectTo:location.origin+location.pathname});
+    toast(error?error.message:'If that account exists, a reset link is on its way.',error?'err':'ok')},
+  async newPass(e){e.preventDefault();const{error}=await sb.auth.updateUser({password:e.target.p.value});if(error)return toast(error.message,'err');
+    closeModal();toast('Password updated');await hydrate();location.hash='#/app/overview';route()},
+  async toggleLink(id){const l=db.links.find(x=>x.id===id);if(!l)return;const st=l.status==='active'?'disabled':'active';
+    const{error}=await sb.from('tracking_links').update({status:st,updated_at:new Date().toISOString()}).eq('id',id);
+    if(error)return toast(error.message,'err');l.status=st;toast('Link '+st);route()},
+  async confirmDelete(id){const{error}=await sb.from('tracking_links').delete().eq('id',id);if(error)return toast(error.message,'err');
+    db.links=db.links.filter(l=>l.id!==id);db.events=db.events.filter(e=>e.linkId!==id);db.geoEvents=db.geoEvents.filter(g=>g.trackingLinkId!==id);
+    db.consents=db.consents.filter(c=>c.trackingLinkId!==id);closeModal();toast('Link deleted');route()},
+  async confirmPurge(){const ids=myLinks().map(l=>l.id);
+    if(ids.length){const r=await Promise.all([sb.from('tracking_events').delete().in('link_id',ids),sb.from('geolocation_events').delete().in('tracking_link_id',ids),sb.from('geolocation_consents').delete().in('tracking_link_id',ids)]);
+      const er=r.find(x=>x.error);if(er)return toast(er.error.message,'err')}
+    db.events=db.events.filter(e=>!ids.includes(e.linkId));db.geoEvents=db.geoEvents.filter(g=>!ids.includes(g.trackingLinkId));
+    db.consents=db.consents.filter(c=>!ids.includes(c.trackingLinkId));closeModal();toast('Event data erased');route()},
+  async confirmDelAcct(){const{error}=await sb.rpc('delete_my_account');if(error)return toast(error.message,'err');closeModal();await logout();toast('Account deleted')},
+  async saveProfile(e){e.preventDefault();const u=me(),n=e.target.name.value.trim()||u.displayName,r=+e.target.retention.value;
+    const{error}=await sb.from('profiles').update({display_name:n,retention_days:r}).eq('id',u.id);if(error)return toast(error.message,'err');
+    u.displayName=n;u.settings.retentionDays=r;toast('Profile saved');route()},
+  async moderate(id,action){if(!isAdmin())return toast('Admins only.','err');
+    const r=db.reports.find(x=>x.id===id);if(!r)return;const l=db.links.find(x=>x.id===r.trackingLinkId);
+    const st=action==='dismiss'?'dismissed':'actioned',now=new Date().toISOString();
+    const q=[sb.from('tracking_reports').update({status:st,reviewed_by:me().id,reviewed_at:now}).eq('id',id)];
+    if(l&&action!=='dismiss')q.push(sb.from('tracking_links').update({status:action==='disable'?'disabled':'removed',updated_at:now}).eq('id',l.id));
+    const er=(await Promise.all(q)).find(x=>x.error);if(er)return toast(er.error.message,'err');
+    r.status=st;r.reviewedBy=me().id;r.reviewedAt=Date.now();if(l&&action==='disable')l.status='disabled';if(l&&action==='remove')l.status='removed';
+    toast('Report '+st+(l&&action!=='dismiss'?' · link '+l.status:''));route()}
+});
+sb.auth.onAuthStateChange(ev=>{if(ev==='PASSWORD_RECOVERY')modal(`<h3 class="font-extrabold text-[16px] mb-3">Set a new password</h3><form onsubmit="Actions.newPass(event)"><input name="p" type="password" minlength="8" required class="input mb-3" placeholder="New password (min. 8 characters)"/><button class="btn-primary w-full py-2.5 text-[13px]">Update password</button></form>`)});
+setInterval(async()=>{const a=document.activeElement?.tagName;
+  if(cur&&/^#\/app\/(overview|logs|analytics\/)/.test(location.hash)&&!['INPUT','TEXTAREA','SELECT'].includes(a)&&!$('#modal-root').firstChild){await hydrate();route()}},60000);
+(async()=>{try{await hydrate()}catch(e){console.error(e);toast('Could not reach the database. Check your Supabase URL and key.','err')}
+  if(cur&&!location.hash)location.hash='#/app/overview';route()})();
+</script>
+</body>
+</html>
