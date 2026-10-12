@@ -20,7 +20,7 @@ tailwind.config = { darkMode:'class', theme:{ extend:{
   boxShadow:{ card:'0 1px 2px rgba(15,23,42,.05),0 4px 16px -4px rgba(15,23,42,.06)' }
 }}};
 </script>
-<style>
+<style type="text/tailwindcss">
   *{ -webkit-tap-highlight-color:transparent }
   body{ font-feature-settings:"cv02","cv03","cv04","cv11" }
   ::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;border:3px solid transparent;background-clip:content-box}
@@ -593,7 +593,8 @@ function vAnalyticsDash(l){
   <div class="flex items-center gap-2 text-[12.5px] text-ink-400 mb-4"><a href="#/app/analytics" class="hover:text-brand-500 font-medium">Analytics</a>${ic('chev','w-3.5 h-3.5')}<span class="text-ink-600 dark:text-ink-300 font-semibold">${esc(l.title||l.slug)}</span></div>
   <div class="card p-5 mb-5"><div class="flex items-start justify-between flex-wrap gap-3">
     <div><div class="flex items-center gap-2 flex-wrap"><h1 class="text-[19px] font-extrabold tracking-tight">${esc(l.title||l.slug)}</h1>${typeBadge(l.linkType)}${statusBadge(l)}</div>
-    <div class="text-[12.5px] text-ink-400 mt-1.5 mono">${l.linkType==='pixel'?'1×1 PNG endpoint':esc(l.destinationUrl)}</div></div>
+    <div class="text-[12.5px] text-brand-600 dark:text-brand-400 mt-1.5 mono break-all">${esc(l.linkType==='pixel'?FN_URL+'?p='+l.slug:l.linkType==='geolocation'?geoURL(l):shortURL(l))}</div>
+    <div class="text-[12px] text-ink-400 mt-1 mono break-all">${l.linkType==='pixel'?'1×1 PNG endpoint':'→ '+esc(l.destinationUrl)}</div></div>
     <div class="flex gap-2"><button onclick="Actions.exportEvents('${l.id}')" class="btn-ghost px-3.5 py-2 text-[12.5px]">${ic('dl','w-4 h-4')}Export CSV</button>
     <a href="#/report/${l.id}" class="btn-ghost px-3.5 py-2 text-[12.5px] text-amber-600">${ic('flag','w-4 h-4')}Report</a></div></div></div>
   <div class="flex gap-1.5 mb-5 overflow-x-auto pb-1">${tabs.map(tabBtn).join('')}</div>${body}`;
@@ -758,21 +759,18 @@ function pubShell(inner){
     <div class="flex items-center justify-center gap-2 mb-6">${logo(30)}<span class="font-extrabold tracking-tight">IP Tracker</span></div>${inner}
     <p class="text-center text-[11.5px] text-ink-400 mt-6">Analytics on this link are collected transparently · <a class="underline hover:text-brand-500" href="#/">About IP Tracker</a></p></div></div>`;
 }
-async function vRedirect(slug){LOADING();const l=await pubLink({action:'visit',slug,linkType:'short_url',ref:document.referrer,utm:utmParams()});
-  if(!l||l.status==='removed')return mount(pubShell(`<div class="card p-8 text-center"><div class="stat-ic bg-ink-100 dark:bg-ink-800 text-ink-400 mx-auto mb-4">${ic('x','w-5 h-5')}</div><h1 class="font-extrabold text-lg">Link not found</h1><p class="text-[13px] text-ink-400 mt-2">This tracking link does not exist or has been permanently removed.</p></div>`));
+const miniShell=inner=>`<div class="min-h-screen flex items-center justify-center px-6 bg-white dark:bg-ink-950"><div class="w-full max-w-xs text-center fadein">${inner}</div></div>`;
+const spinner='<div class="w-9 h-9 mx-auto rounded-full border-[3px] border-ink-200 dark:border-ink-700 border-t-brand-600 animate-spin"></div>';
+async function vRedirect(slug){
+  mount(miniShell(spinner));
+  const l=await pubLink({action:'visit',slug,linkType:'short_url',ref:document.referrer,utm:utmParams()});
+  const note=(t,d)=>mount(miniShell(`<h1 class="font-bold text-lg">${t}</h1><p class="text-[13px] text-ink-400 mt-2">${d}</p>`));
+  if(!l||l.status==='removed')return note('Link not found','This link does not exist or has been removed.');
   const expired=l.expiresAt&&l.expiresAt<Date.now();
-  if(l.status==='disabled'||expired)return mount(pubShell(`<div class="card p-8 text-center"><div class="stat-ic bg-amber-50 dark:bg-amber-500/10 text-amber-500 mx-auto mb-4">${ic('clock','w-5 h-5')}</div>
-    <h1 class="font-extrabold text-lg">${expired?'Link expired':'Link disabled'}</h1><p class="text-[13px] text-ink-400 mt-2">${expired?'This short link has passed its expiration date.':'This link was disabled by its owner or a moderator.'} No redirect was performed and no analytics were recorded.</p></div>`));
-  const dom=new URL(l.destinationUrl).hostname;
-  return mount(pubShell(`<div class="card p-8 text-center">
-    <div class="stat-ic bg-brand-50 dark:bg-brand-500/10 text-brand-500 mx-auto mb-4 !w-12 !h-12">${ic('zap','w-6 h-6')}</div>
-    <h1 class="font-extrabold text-lg">Redirecting you now</h1>
-    <p class="text-[13px] text-ink-500 mt-2">You're on your way to <b class="mono">${esc(dom)}</b>. Basic visit analytics (approximate region, device, referrer) were recorded and disclosed.</p>
-    <div class="mt-5 h-1.5 rounded-full bg-ink-100 dark:bg-ink-800 overflow-hidden"><div id="rbar" class="h-full bg-brand-500 rounded-full" style="width:0%;transition:width 2.6s linear"></div></div>
-    <div class="flex items-center justify-center gap-3 mt-6">
-      <a href="${esc(l.destinationUrl)}" class="btn-primary px-5 py-2.5 text-[13.5px]">Continue now ${ic('chev','w-4 h-4')}</a>
-      <a href="#/report/${l.id}" class="btn-ghost px-4 py-2.5 text-[12.5px] text-amber-600">${ic('flag','w-4 h-4')}Report suspicious link</a></div></div>`),
-  ()=>{requestAnimationFrame(()=>{const b=$('#rbar');if(b)b.style.width='100%'});setTimeout(()=>{location.href=l.destinationUrl},2900)});
+  if(l.status==='disabled'||expired)return note(expired?'Link expired':'Link unavailable','This link is no longer active.');
+  const dest=l.destinationUrl;
+  location.replace(dest);
+  setTimeout(()=>mount(miniShell(`${spinner}<p class="text-[13px] text-ink-500 mt-5">Taking you to <b>${esc(new URL(dest).hostname)}</b>…</p><a href="${esc(dest)}" class="inline-block mt-3 text-[13px] font-semibold text-brand-600">Tap here if nothing happens</a>`)),2500);
 }
 async function vGeoConsent(slug){LOADING();const l=await pubLink({action:'visit',slug,linkType:'geolocation',ref:document.referrer,utm:utmParams()});
   if(!l||l.status!=='active'||(l.expiresAt&&l.expiresAt<Date.now()))return mount(pubShell(`<div class="card p-8 text-center"><h1 class="font-extrabold text-lg">Link unavailable</h1><p class="text-[13px] text-ink-400 mt-2">This geolocation link is expired, disabled or removed.</p></div>`));
